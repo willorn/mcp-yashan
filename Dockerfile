@@ -19,12 +19,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY yashandb-jdbc-1.7.19-21.jar /app/
 COPY yashan_mcp_server.py /app/
 
-# 设置环境变量
-ENV DB_HOST=***REMOVED***
-ENV DB_PORT=1688
-ENV DB_USER=***REMOVED***
-ENV DB_PASSWORD=***REMOVED***
-ENV DB_NAME=yashandb
+# 设置环境变量（请通过 .env 文件或运行时传入）
+# ENV DB_HOST=your_host
+# ENV DB_PORT=1688
+# ENV DB_USER=your_username
+# ENV DB_PASSWORD=your_password
+# ENV DB_NAME=yashandb
 ENV JVM_LIB=/usr/lib/jvm/default-java/lib/server/libjvm.so
 
 # 暴露端口（MCP SSE 模式）
