@@ -1,14 +1,11 @@
 # 崖山数据库 MCP Server 依赖
-# ================================
 
-# MCP 核心框架
-mcp>=1.0.0
+# MCP 框架
+fastmcp>=0.4.0
 
-# JDBC 桥接驱动（崖山数据库必须使用 JDBC）
+# JDBC 连接
 jpype1>=1.4.0
-jaydebeapi>=1.2.0
+jaydebeapi>=1.2.3
 
-# Web 服务器（用于 HTTP/SSE 模式）
-uvicorn>=0.24.0
-fastapi>=0.104.0
-sse-starlette>=2.0.0
+# 环境变量管理
+python-dotenv>=1.0.0

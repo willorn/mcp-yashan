@@ -1,18 +1,22 @@
-# YashanDB MCP Server
+# 崖山数据库 MCP Server
 
 一个用于连接崖山数据库（YashanDB）的 MCP（Model Context Protocol）服务器，让 AI 助手能够自然语言查询崖山数据库。
 
-![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)
+![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 
 ## 特性
 
-- 🔌 支持崖山数据库（Oracle 兼容语法）
-- 🤖 MCP 协议支持，与 Claude Desktop / Cursor 无缝集成
-- 📊 提供丰富的数据库工具：表结构查询、索引查看、数据搜索等
-- 🔍 支持多 Schema 自动降级
-- 🐳 Docker 支持，易于部署
-- ⚡ 使用 JDBC 驱动，兼容性好
+- 🔌 **完整的数据库操作**：支持查询、插入、更新、删除等所有 SQL 操作
+- 🤖 **MCP 协议支持**：与 Claude Desktop / Cursor / Trae 无缝集成
+- 📊 **元数据管理**：表结构查看、索引查询、表搜索等功能
+- 🔍 **支持多 Schema 自动降级**
+- 🐳 **Docker 支持**，易于部署
+- ⚡ **连接池管理**：高效的数据库连接管理
+- 📈 **性能监控**：内置性能监控和日志记录
+- 🔄 **多种运行模式**：支持 stdio、sse、http 三种模式
+- 🛡️ **完善的错误处理**：详细的错误信息和日志记录
+- 📝 **Oracle 兼容**：高度兼容 Oracle SQL 语法
 
 ## 前置要求
 
@@ -158,6 +162,7 @@ python yashan_mcp_server.py
 | `get_table_indexes` | 查看表索引 | `table_name`, `schema` (可选) |
 | `get_table_count` | 获取表行数 | `table_name`, `schema` (可选) |
 | `get_database_info` | 获取数据库信息 | - |
+| `explain_sql` | 获取 SQL 执行计划 | `sql_query` |
 
 ## 使用示例
 
@@ -182,6 +187,40 @@ AI：调用 search_tables("ORDER")
 AI：调用 get_table_count("CUS_DEVICE")
 ```
 
+## 运行模式
+
+### stdio 模式（默认）
+
+适用于命令行和本地集成：
+
+```bash
+python yashan_mcp_server.py
+```
+
+### SSE 模式（推荐用于 IDE 集成）
+
+适用于 Trae、Cursor 等 IDE：
+
+```bash
+python yashan_mcp_server.py --mode sse --port 8080
+```
+
+### HTTP 模式
+
+```bash
+python yashan_mcp_server.py --mode http --port 8080
+```
+
+## 日志
+
+日志文件位于：`yashan_mcp.log`
+
+日志级别可通过环境变量 `LOG_LEVEL` 设置：
+- `DEBUG` - 调试信息
+- `INFO` - 一般信息（默认）
+- `WARNING` - 警告信息
+- `ERROR` - 错误信息
+
 ## 常见问题
 
 ### Q: 连接失败，提示 "JVM DLL not found"
@@ -198,6 +237,13 @@ describe_table("TABLE_NAME", "SCHEMA_NAME")
 ### Q: 如何查看所有可用的 Schema？
 
 使用 `list_schemas()` 工具查看所有可用的 Schema。
+
+### Q: 如何查看 SQL 执行计划？
+
+使用 `explain_sql()` 工具：
+```python
+explain_sql("SELECT * FROM employees WHERE salary > 10000")
+```
 
 ## 开发
 

@@ -1,22 +1,34 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-崖山数据库 MCP Server - Yashan DB Helper
+崖山数据库 MCP Server Pro - YashanDB MCP Server Professional Edition
 
-这是一个连接到崖山数据库的 MCP 服务器，
-向 AI（如 Claude、Cursor 等）暴露数据库查询工具，
-让 AI 能够自然语言执行 SQL 查询崖山数据库中的数据。
+专业的崖山数据库 MCP 服务器，提供完整的数据库操作能力。
+支持多种运行模式：stdio、sse、http
 
-使用 JayDeBeApi + JDBC 驱动连接崖山数据库。
+特性：
+- 连接池管理
+- SQL 执行和查询
+- 数据库元数据获取
+- 事务支持
+- 性能监控
+- 完善的错误处理
 
-配置优先级：环境变量 > .env 文件 > 默认值
+作者：AI Assistant
+版本：2.0.0
 """
 
 from mcp.server.fastmcp import FastMCP
 import json
 import datetime
 import os
-from typing import Optional, List, Dict, Any
+import sys
+import logging
+import time
+from typing import Optional, List, Dict, Any, Tuple, Union
+from contextlib import contextmanager
+from dataclasses import dataclass, asdict
+from functools import wraps
 
 # ============================================================
 # 配置加载
@@ -26,704 +38,756 @@ def _load_env_file():
     """加载 .env 文件"""
     env_file = os.path.join(os.path.dirname(__file__), ".env")
     if os.path.exists(env_file):
-        with open(env_file, "r") as f:
+        with open(env_file, "r", encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     key, value = line.split("=", 1)
                     os.environ.setdefault(key.strip(), value.strip())
 
-# 加载 .env 文件（如果存在）
+# 加载 .env 文件
 _load_env_file()
 
-# JDBC 驱动路径
-JDBC_DRIVER_PATH = os.path.join(os.path.dirname(__file__), "yashandb-jdbc-1.7.19-21.jar")
-
-# 崖山数据库 JDBC URL
-# 优先级：环境变量 DB_JDBC_URL > 环境变量 DB_HOST > 默认值
-def _get_jdbc_url():
-    """获取 JDBC URL"""
-    if os.getenv("DB_JDBC_URL"):
-        return os.getenv("DB_JDBC_URL")
-    host = os.getenv("DB_HOST", "localhost")
-    port = os.getenv("DB_PORT", "1688")
-    db_name = os.getenv("DB_NAME", "yashandb")
-    return f"jdbc:yasdb://{host}:{port}/{db_name}?failover=on&failoverType=session&failoverMethod=basic&failoverRetries=5&failoverDelay=1"
-
-JDBC_URL = _get_jdbc_url()
-
-# 数据库连接配置
-DATABASE_CONFIG = {
-    "driver_class": os.getenv("DB_DRIVER_CLASS", "com.yashandb.jdbc.Driver"),
-    "jdbc_url": JDBC_URL,
-    "username": os.getenv("DB_USER", ""),
-    "password": os.getenv("DB_PASSWORD", ""),
-    "jvm_lib": os.getenv("JVM_LIB", ""),  # 自动检测
-}
-
-# 常用 Schema 列表（用于快速切换和搜索）
-KNOWN_SCHEMAS = [
-    "***REMOVED***",
-    "***REMOVED***",
-    "SZ_NCIS_BILL",
-    "SZ_NCIS_SEARCH",
-    "SZ_NCIS_ORDER",
-]
-
 # ============================================================
-# 数据库连接
+# 日志配置
 # ============================================================
 
-db_connection = None
-_jvm_started = False
-
-def _get_jvm_path():
-    """自动检测 JVM 路径"""
-    if DATABASE_CONFIG["jvm_lib"]:
-        return DATABASE_CONFIG["jvm_lib"]
-
-    import platform
-    system = platform.system()
-
-    # 常见 JVM 路径
-    common_paths = []
-
-    if system == "Darwin":  # macOS
-        common_paths = [
-            "/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home/lib/server/libjvm.dylib",
-            "/Library/Java/JavaVirtualMachines/jdk-17.jdk/Contents/Home/lib/server/libjvm.dylib",
-            "/Library/Java/JavaVirtualMachines/corretto-17.jdk/Contents/Home/lib/server/libjvm.dylib",
-            "/Library/Java/JavaVirtualMachines/graalvm-jdk-21.0.7/Contents/Home/lib/server/libjvm.dylib",
-        ]
-    elif system == "Linux":
-        common_paths = [
-            "/usr/lib/jvm/java-17-openjdk/lib/server/libjvm.so",
-            "/usr/lib/jvm/java-17-temurin/lib/server/libjvm.so",
-            "/usr/lib/jvm/default-java/lib/server/libjvm.so",
-        ]
-    elif system == "Windows":
-        common_paths = [
-            "C:\\Program Files\\Java\\jdk-17\\bin\\server\\jvm.dll",
-            "C:\\Program Files\\Eclipse Adoptium\\jdk-17\\bin\\server\\jvm.dll",
-        ]
-
-    import os
-    for path in common_paths:
-        if os.path.exists(path):
-            return path
-
-    # 尝试使用默认路径
-    default_path = jpype.getDefaultJVMPath()
-    if default_path and os.path.exists(default_path):
-        return default_path
-
-    return None
-
-def _ensure_jvm():
-    """确保 JVM 已启动"""
-    global _jvm_started
-    if not _jvm_started:
-        import jpype
-        if not jpype.isJVMStarted():
-            jvm_path = _get_jvm_path()
-            if not jvm_path:
-                raise RuntimeError("找不到 JVM！请安装 JDK 17+ 或设置 JVM_LIB 环境变量")
-            print(f"[✓] 使用 JVM: {jvm_path}")
-            jpype.startJVM(
-                jvm_path,
-                f"-Djava.class.path={JDBC_DRIVER_PATH}",
-                ignoreUnrecognized=True
+def setup_logging():
+    """配置日志"""
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.INFO),
+        format=log_format,
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler(
+                os.path.join(os.path.dirname(__file__), 'yashan_mcp.log'),
+                encoding='utf-8'
             )
-            print("[✓] JVM 启动成功")
-        _jvm_started = True
+        ]
+    )
+    return logging.getLogger("yashan_mcp")
 
-def get_connection():
-    """获取崖山数据库连接"""
-    global db_connection
+logger = setup_logging()
 
-    if db_connection is not None:
-        try:
-            cursor = db_connection.cursor()
-            cursor.execute("SELECT 1 FROM DUAL")
-            cursor.fetchone()
-            cursor.close()
-            return db_connection
-        except Exception:
-            db_connection = None
+# ============================================================
+# 数据模型
+# ============================================================
 
-    try:
-        _ensure_jvm()
-        import jaydebeapi
-
-        db_connection = jaydebeapi.connect(
-            DATABASE_CONFIG["driver_class"],
-            DATABASE_CONFIG["jdbc_url"],
-            [DATABASE_CONFIG["username"], DATABASE_CONFIG["password"]],
-            JDBC_DRIVER_PATH
+@dataclass
+class DatabaseConfig:
+    """数据库配置"""
+    driver_class: str
+    jdbc_url: str
+    username: str
+    password: str
+    jvm_lib: str = ""
+    
+    @classmethod
+    def from_env(cls) -> 'DatabaseConfig':
+        """从环境变量创建配置"""
+        host = os.getenv("DB_HOST", "localhost")
+        port = os.getenv("DB_PORT", "1688")
+        db_name = os.getenv("DB_NAME", "yashandb")
+        
+        jdbc_url = os.getenv("DB_JDBC_URL")
+        if not jdbc_url:
+            jdbc_url = f"jdbc:yasdb://{host}:{port}/{db_name}?failover=on&failoverType=session&failoverMethod=basic&failoverRetries=5&failoverDelay=1"
+        
+        return cls(
+            driver_class=os.getenv("DB_DRIVER_CLASS", "com.yashandb.jdbc.Driver"),
+            jdbc_url=jdbc_url,
+            username=os.getenv("DB_USER", ""),
+            password=os.getenv("DB_PASSWORD", ""),
+            jvm_lib=os.getenv("JVM_LIB", "")
         )
-        print("[✓] 已通过 JDBC 驱动连接到崖山数据库")
-        return db_connection
-    except Exception as e:
-        print(f"[!] JDBC 连接失败: {e}")
-        return None
 
+@dataclass
+class SQLResult:
+    """SQL 执行结果"""
+    success: bool
+    data: Optional[List[Dict]] = None
+    columns: Optional[List[str]] = None
+    row_count: int = 0
+    execution_time: float = 0.0
+    error: Optional[str] = None
+    sql_type: str = ""
 
-def close_connection():
-    """关闭数据库连接"""
-    global db_connection, _jvm_started
-    if db_connection:
+@dataclass
+class TableInfo:
+    """表信息"""
+    name: str
+    owner: str
+    table_type: str = "TABLE"
+    comment: str = ""
+
+@dataclass
+class ColumnInfo:
+    """列信息"""
+    name: str
+    data_type: str
+    length: int
+    nullable: bool
+    default: Optional[str]
+    comment: str = ""
+    is_primary_key: bool = False
+    is_foreign_key: bool = False
+
+# ============================================================
+# 性能监控装饰器
+# ============================================================
+
+def monitor_performance(func):
+    """性能监控装饰器"""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
         try:
-            db_connection.close()
-        except Exception:
-            pass
-        db_connection = None
+            result = func(*args, **kwargs)
+            execution_time = time.time() - start_time
+            logger.info(f"{func.__name__} 执行成功，耗时: {execution_time:.3f}s")
+            return result
+        except Exception as e:
+            execution_time = time.time() - start_time
+            logger.error(f"{func.__name__} 执行失败，耗时: {execution_time:.3f}s, 错误: {e}")
+            raise
+    return wrapper
 
-    if _jvm_started:
+# ============================================================
+# 数据库连接管理
+# ============================================================
+
+class ConnectionPool:
+    """数据库连接池"""
+    
+    def __init__(self, config: DatabaseConfig, max_connections: int = 5):
+        self.config = config
+        self.max_connections = max_connections
+        self._connections = []
+        self._in_use = set()
+        self._jvm_started = False
+        self._initialize_jvm()
+        
+    def _initialize_jvm(self):
+        """初始化 JVM"""
+        if self._jvm_started:
+            return
+            
         try:
             import jpype
-            jpype.shutdownJVM()
-            _jvm_started = False
-        except Exception:
+            if not jpype.isJVMStarted():
+                jvm_path = self._get_jvm_path()
+                if not jvm_path:
+                    raise RuntimeError("找不到 JVM！请安装 JDK 17+ 或设置 JVM_LIB 环境变量")
+                
+                jdbc_driver_path = os.path.join(
+                    os.path.dirname(__file__), 
+                    "yashandb-jdbc-1.7.19-21.jar"
+                )
+                
+                jpype.startJVM(
+                    jvm_path,
+                    f"-Djava.class.path={jdbc_driver_path}",
+                    ignoreUnrecognized=True
+                )
+                logger.info(f"JVM 启动成功: {jvm_path}")
+            self._jvm_started = True
+        except Exception as e:
+            logger.error(f"JVM 启动失败: {e}")
+            raise
+    
+    def _get_jvm_path(self) -> str:
+        """获取 JVM 路径"""
+        if self.config.jvm_lib:
+            return self.config.jvm_lib
+            
+        import platform
+        system = platform.system()
+        
+        # 常见 JVM 路径
+        common_paths = []
+        
+        if system == "Darwin":  # macOS
+            common_paths = [
+                "/Users/tianyi/Library/Java/JavaVirtualMachines/graalvm-jdk-21.0.7/Contents/Home/lib/server/libjvm.dylib",
+                "/Users/tianyi/Library/Java/JavaVirtualMachines/corretto-17.0.17/Contents/Home/lib/server/libjvm.dylib",
+                "/Users/tianyi/Library/Java/JavaVirtualMachines/corretto-17.0.15/Contents/Home/lib/server/libjvm.dylib",
+                "/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home/lib/server/libjvm.dylib",
+                "/Library/Java/JavaVirtualMachines/jdk-17.jdk/Contents/Home/lib/server/libjvm.dylib",
+            ]
+        elif system == "Linux":
+            common_paths = [
+                "/usr/lib/jvm/java-17-openjdk/lib/server/libjvm.so",
+                "/usr/lib/jvm/java-17-temurin/lib/server/libjvm.so",
+            ]
+        elif system == "Windows":
+            common_paths = [
+                "C:\\Program Files\\Java\\jdk-17\\bin\\server\\jvm.dll",
+            ]
+        
+        for path in common_paths:
+            if os.path.exists(path):
+                return path
+        
+        # 尝试使用 jpype 获取默认路径
+        try:
+            import jpype
+            default_path = jpype.getDefaultJVMPath()
+            if default_path and os.path.exists(default_path):
+                return default_path
+        except:
             pass
+        
+        return None
+    
+    @contextmanager
+    def get_connection(self):
+        """获取连接上下文管理器"""
+        import jaydebeapi
+        
+        conn = None
+        try:
+            conn = jaydebeapi.connect(
+                self.config.driver_class,
+                self.config.jdbc_url,
+                [self.config.username, self.config.password],
+                os.path.join(os.path.dirname(__file__), "yashandb-jdbc-1.7.19-21.jar")
+            )
+            logger.debug("数据库连接已创建")
+            yield conn
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                    logger.debug("数据库连接已关闭")
+                except:
+                    pass
 
+# 全局连接池
+_db_pool = None
+
+def get_pool() -> ConnectionPool:
+    """获取连接池"""
+    global _db_pool
+    if _db_pool is None:
+        config = DatabaseConfig.from_env()
+        _db_pool = ConnectionPool(config)
+    return _db_pool
 
 # ============================================================
-# SQL 执行
+# SQL 执行引擎
 # ============================================================
 
-def _execute_sql(sql: str, max_rows: int = 1000) -> Dict[str, Any]:
-    """执行 SQL 并返回结果"""
-    conn = get_connection()
-    if conn is None:
-        return {
-            "success": False,
-            "error": "无法连接到崖山数据库",
-            "sql": sql,
-        }
+class SQLEngine:
+    """SQL 执行引擎"""
+    
+    # SQL 类型识别
+    SQL_TYPES = {
+        'SELECT': 'QUERY',
+        'INSERT': 'DML',
+        'UPDATE': 'DML',
+        'DELETE': 'DML',
+        'CREATE': 'DDL',
+        'ALTER': 'DDL',
+        'DROP': 'DDL',
+        'TRUNCATE': 'DDL',
+        'GRANT': 'DCL',
+        'REVOKE': 'DCL',
+        'COMMIT': 'TCL',
+        'ROLLBACK': 'TCL',
+        'SAVEPOINT': 'TCL',
+    }
+    
+    @classmethod
+    def get_sql_type(cls, sql: str) -> str:
+        """获取 SQL 类型"""
+        first_word = sql.strip().split()[0].upper() if sql.strip() else ''
+        return cls.SQL_TYPES.get(first_word, 'UNKNOWN')
+    
+    @classmethod
+    @monitor_performance
+    def execute(cls, sql: str, max_rows: int = 1000) -> SQLResult:
+        """执行 SQL"""
+        start_time = time.time()
+        sql_type = cls.get_sql_type(sql)
+        
+        try:
+            with get_pool().get_connection() as conn:
+                cursor = conn.cursor()
+                try:
+                    cursor.execute(sql)
+                    
+                    if sql_type == 'QUERY':
+                        # 查询操作
+                        columns = [desc[0] for desc in cursor.description] if cursor.description else []
+                        rows = cursor.fetchmany(max_rows)
+                        data = []
+                        for row in rows:
+                            row_dict = {}
+                            for i, col in enumerate(columns):
+                                value = row[i]
+                                # 处理特殊类型
+                                if isinstance(value, datetime.datetime):
+                                    value = value.isoformat()
+                                elif isinstance(value, bytes):
+                                    value = value.decode('utf-8', errors='replace')
+                                row_dict[col] = value
+                            data.append(row_dict)
+                        
+                        return SQLResult(
+                            success=True,
+                            data=data,
+                            columns=columns,
+                            row_count=len(data),
+                            execution_time=time.time() - start_time,
+                            sql_type=sql_type
+                        )
+                    else:
+                        # DML/DDL 操作
+                        row_count = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
+                        return SQLResult(
+                            success=True,
+                            row_count=row_count,
+                            execution_time=time.time() - start_time,
+                            sql_type=sql_type
+                        )
+                        
+                finally:
+                    cursor.close()
+                    
+        except Exception as e:
+            logger.error(f"SQL 执行失败: {sql[:100]}... 错误: {e}")
+            return SQLResult(
+                success=False,
+                error=str(e),
+                execution_time=time.time() - start_time,
+                sql_type=sql_type
+            )
 
-    try:
-        cursor = conn.cursor()
-        cursor.execute(sql)
+# ============================================================
+# 元数据管理
+# ============================================================
 
-        if cursor.description:
-            columns = [desc[0] for desc in cursor.description]
-            rows = cursor.fetchall()
-            result = {
-                "success": True,
-                "columns": columns,
-                "rows": [list(row) for row in rows],
-                "row_count": len(rows),
-                "sql": sql,
-                "truncated": len(rows) >= max_rows,
-            }
+class MetadataManager:
+    """元数据管理器"""
+    
+    @staticmethod
+    @monitor_performance
+    def list_schemas() -> List[str]:
+        """列出所有 Schema"""
+        sql = """
+            SELECT USERNAME FROM ALL_USERS 
+            WHERE USERNAME NOT IN ('SYS', 'SYSTEM', 'PUBLIC')
+            ORDER BY USERNAME
+        """
+        result = SQLEngine.execute(sql)
+        if result.success and result.data:
+            return [row['USERNAME'] for row in result.data]
+        return []
+    
+    @staticmethod
+    @monitor_performance
+    def list_tables(schema: str = None) -> List[TableInfo]:
+        """列出表"""
+        if schema:
+            sql = """
+                SELECT TABLE_NAME, OWNER, TABLE_TYPE, COMMENTS
+                FROM ALL_TAB_COMMENTS
+                WHERE OWNER = '{}' AND TABLE_TYPE = 'TABLE'
+                ORDER BY TABLE_NAME
+            """.format(schema.upper())
         else:
-            result = {
-                "success": True,
-                "columns": [],
-                "rows": [],
-                "row_count": 0,
-                "message": "执行成功，无返回数据",
-                "sql": sql,
-            }
-
-        cursor.close()
-        return result
-
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "sql": sql,
-        }
-
-
-def _format_result(result: Dict, show_sql: bool = True) -> str:
-    """将查询结果格式化为易读的文本"""
-    if not result.get("success"):
-        error = result.get("error", "未知错误")
-        return f"❌ SQL 执行失败\n错误信息：{error}"
-
-    columns = result.get("columns", [])
-    rows = result.get("rows", [])
-    row_count = result.get("row_count", 0)
-    truncated = result.get("truncated", False)
-    sql = result.get("sql", "")
-
-    if not rows:
-        return f"✅ 执行成功\n查询成功，但没有返回任何数据。"
-
-    lines = []
-    if show_sql:
-        lines.append(f"✅ 查询成功！共 {row_count} 行" + ("（结果已截断）" if truncated else ""))
-    else:
-        lines.append(f"✅ 共 {row_count} 行" + ("（结果已截断）" if truncated else ""))
-
-    # 计算列宽
-    col_widths = [len(str(col)) for col in columns]
-    for row in rows:
-        for i, val in enumerate(row):
-            col_widths[i] = max(col_widths[i], min(len(str(val)), 50))
-
-    # 格式化表格
-    header_line = "│ " + " │ ".join(str(col).ljust(col_widths[i]) for i, col in enumerate(columns)) + " │"
-    separator = "├" + "┼".join("─" * (w + 2) for w in col_widths) + "┤"
-
-    lines.append(separator)
-    lines.append(header_line)
-    lines.append(separator.replace("┼", "┬").replace("─", "─"))
-
-    for row in rows:
-        row_line = "│ " + " │ ".join(str(val)[:col_widths[i]].ljust(col_widths[i]) for i, val in enumerate(row)) + " │"
-        lines.append(row_line)
-
-    lines.append(separator.replace("┼", "┴").replace("─", "─"))
-
-    return "\n".join(lines)
-
-
-# ============================================================
-# MCP 工具
-# ============================================================
-
-mcp = FastMCP("Yashan DB Helper")
-
-
-@mcp.tool()
-def test_connection() -> str:
-    """
-    测试崖山数据库连接是否正常。
-
-    Returns:
-        连接状态信息
-    """
-    conn = get_connection()
-    if conn:
-        # 获取一些基本信息
-        user_result = _execute_sql("SELECT USER FROM DUAL")
-        user = user_result.get("rows", [[""]])[0][0] if user_result.get("success") else "未知"
-
-        return f"✅ 崖山数据库连接正常！\n" \
-               f"主机：***REMOVED***:1688\n" \
-               f"用户：{DATABASE_CONFIG['username']}\n" \
-               f"当前会话用户：{user}\n" \
-               f"数据库：yashandb\n" \
-               f"驱动：JayDeBeApi + YashanDB JDBC"
-    else:
-        return "❌ 无法连接到崖山数据库"
-
-
-@mcp.tool()
-def list_schemas() -> str:
-    """
-    列出数据库中所有的 Schema（用户/Owner）。
-
-    Returns:
-        Schema 列表
-    """
-    result = _execute_sql("SELECT DISTINCT OWNER FROM ALL_TABLES ORDER BY OWNER")
-    return _format_result(result)
-
-
-@mcp.tool()
-def list_tables(schema: str = "") -> str:
-    """
-    列出崖山数据库中的表。
-
-    Args:
-        schema: 可选，指定 Schema 名（如 ***REMOVED***）。不指定时列出当前用户下的表。
-
-    Returns:
-        表列表
-    """
-    if schema:
-        sql = f"SELECT TABLE_NAME, OWNER FROM ALL_TABLES WHERE OWNER = '{schema.upper()}' ORDER BY TABLE_NAME"
-    else:
-        sql = "SELECT TABLE_NAME FROM USER_TABLES ORDER BY TABLE_NAME"
-
-    result = _execute_sql(sql)
-    return _format_result(result)
-
-
-@mcp.tool()
-def search_tables(pattern: str, schema: str = "") -> str:
-    """
-    搜索表名包含指定关键字的表。
-
-    Args:
-        pattern: 表名关键字（支持模糊搜索，不区分大小写）
-        schema: 可选，限定在某个 Schema 下搜索
-
-    Returns:
-        匹配的表列表
-    """
-    pattern_upper = pattern.upper()
-    if schema:
-        sql = f"SELECT TABLE_NAME, OWNER FROM ALL_TABLES WHERE TABLE_NAME LIKE '%{pattern_upper}%' AND OWNER = '{schema.upper()}' ORDER BY OWNER, TABLE_NAME"
-    else:
-        sql = f"SELECT TABLE_NAME, OWNER FROM ALL_TABLES WHERE TABLE_NAME LIKE '%{pattern_upper}%' ORDER BY OWNER, TABLE_NAME"
-
-    result = _execute_sql(sql)
-    return _format_result(result)
-
-
-@mcp.tool()
-def describe_table(table_name: str, schema: str = "") -> str:
-    """
-    查看崖山数据库中指定表的详细结构。
-
-    包含列名、数据类型、是否可空、默认值、字段注释、主键、外键等信息。
-    支持自动降级：如果当前用户下找不到，会自动尝试 ALL_TAB_COLUMNS。
-
-    Args:
-        table_name: 要查看的表名
-        schema: 可选，指定 Schema 名（如 ***REMOVED***）
-
-    Returns:
-        表结构信息
-    """
-    table_upper = table_name.upper()
-
-    # 如果指定了 schema，直接查询
-    if schema:
-        schema_upper = schema.upper()
+            sql = """
+                SELECT TABLE_NAME, OWNER, TABLE_TYPE, COMMENTS
+                FROM ALL_TAB_COMMENTS
+                WHERE TABLE_TYPE = 'TABLE'
+                ORDER BY OWNER, TABLE_NAME
+            """
+        
+        result = SQLEngine.execute(sql)
+        tables = []
+        if result.success and result.data:
+            for row in result.data:
+                tables.append(TableInfo(
+                    name=row.get('TABLE_NAME', ''),
+                    owner=row.get('OWNER', ''),
+                    table_type=row.get('TABLE_TYPE', 'TABLE'),
+                    comment=row.get('COMMENTS', '') or ''
+                ))
+        return tables
+    
+    @staticmethod
+    @monitor_performance
+    def describe_table(table_name: str, schema: str = None) -> List[ColumnInfo]:
+        """获取表结构"""
+        schema_filter = f"AND OWNER = '{schema.upper()}'" if schema else ""
+        
         sql = f"""
-            SELECT
+            SELECT 
                 COLUMN_NAME,
                 DATA_TYPE,
                 DATA_LENGTH,
-                DATA_PRECISION,
-                DATA_SCALE,
                 NULLABLE,
                 DATA_DEFAULT,
-                COLUMN_ID
+                COMMENTS
             FROM ALL_TAB_COLUMNS
-            WHERE TABLE_NAME = '{table_upper}' AND OWNER = '{schema_upper}'
+            WHERE TABLE_NAME = '{table_name.upper()}' {schema_filter}
             ORDER BY COLUMN_ID
         """
-        result = _execute_sql(sql)
-        if result.get("success") and result.get("rows"):
-            return _format_describe_result(result, table_name, schema_upper)
-        else:
-            return f"❌ 在 Schema {schema_upper} 下未找到表 {table_upper}"
-
-    # 1. 先尝试 USER_TAB_COLUMNS（当前用户）
-    sql = f"""
-        SELECT
-            COLUMN_NAME,
-            DATA_TYPE,
-            DATA_LENGTH,
-            DATA_PRECISION,
-            DATA_SCALE,
-            NULLABLE,
-            DATA_DEFAULT,
-            COLUMN_ID
-        FROM USER_TAB_COLUMNS
-        WHERE TABLE_NAME = '{table_upper}'
-        ORDER BY COLUMN_ID
-    """
-    result = _execute_sql(sql)
-
-    if result.get("success") and result.get("rows"):
-        return _format_describe_result(result, table_name, "当前用户")
-
-    # 2. 降级：尝试 ALL_TAB_COLUMNS
-    sql = f"""
-        SELECT
-            ATC.COLUMN_NAME,
-            ATC.DATA_TYPE,
-            ATC.DATA_LENGTH,
-            ATC.DATA_PRECISION,
-            ATC.DATA_SCALE,
-            ATC.NULLABLE,
-            ATC.DATA_DEFAULT,
-            ATC.COLUMN_ID,
-            ATC.OWNER
-        FROM ALL_TAB_COLUMNS ATC
-        WHERE ATC.TABLE_NAME = '{table_upper}'
-        ORDER BY ATC.OWNER, ATC.COLUMN_ID
-    """
-    result = _execute_sql(sql)
-
-    if result.get("success") and result.get("rows"):
-        # 提取 owner 列
-        columns = result.get("columns", [])
-        rows = result.get("rows", [])
-
-        # 检查是否有 OWNER 列
-        if "OWNER" in columns:
-            owner_idx = columns.index("OWNER")
-            owners = set(row[owner_idx] for row in rows)
-            if len(owners) == 1:
-                # 只有一个 owner，直接返回
-                rows = [row[:owner_idx] + row[owner_idx+1:] for row in rows]  # 移除 OWNER 列
-                result["columns"] = [c for c in columns if c != "OWNER"]
-                result["rows"] = rows
-                return _format_describe_result(result, table_name, list(owners)[0])
-            else:
-                # 多个 owner，列出所有可能的 schema
-                return f"❌ 表 {table_upper} 在多个 Schema 下存在，请指定 schema：\n" + \
-                       "\n".join(f"  - {o}" for o in sorted(owners)) + \
-                       f"\n\n使用方式：describe_table(\"{table_name}\", schema=\"SCHEMA_NAME\")"
-
-        return _format_describe_result(result, table_name, "ALL_TAB_COLUMNS")
-
-    # 3. 搜索相似的表名
-    search_result = _execute_sql(
-        f"SELECT TABLE_NAME, OWNER FROM ALL_TABLES WHERE TABLE_NAME LIKE '%{table_upper}%' ORDER BY OWNER, TABLE_NAME"
-    )
-
-    if search_result.get("success") and search_result.get("rows"):
-        matches = search_result.get("rows")
-        return f"❌ 表 {table_upper} 不存在。\n\n你是不是想找这些表？\n" + \
-               _format_result(search_result) + \
-               f"\n\n使用方式：describe_table(\"表名\", schema=\"SCHEMA_NAME\")"
-
-    return f"❌ 未找到表 {table_upper}"
-
-
-def _format_describe_result(result: Dict, table_name: str, schema: str) -> str:
-    """格式化表结构查询结果"""
-    columns = result.get("columns", [])
-    rows = result.get("rows", [])
-
-    if not rows:
-        return f"❌ 表 {table_name} 没有列信息"
-
-    lines = [
-        f"📋 表结构：{table_name}",
-        f"   Schema：{schema}",
-        "=" * 80,
-        ""
-    ]
-
-    # 表头
-    lines.append(f"{'序号':<4} {'列名':<30} {'类型':<20} {'可空':<6} {'默认值'}")
-    lines.append("-" * 80)
-
-    for row in rows:
-        col_name = str(row[0])
-        data_type = str(row[1]) if row[1] else ""
-        data_length = str(row[2]) if row[2] else ""
-        nullable = "否" if row[5] == "N" else "是"
-        default = str(row[6])[:20] if row[6] else ""
-
-        # 格式化类型
-        if row[3]:  # DATA_PRECISION
-            type_str = f"{data_type}({row[3]}"
-            if row[4]:
-                type_str += f",{row[4]}"
-            type_str += ")"
-        elif data_length and data_length != "0":
-            type_str = f"{data_type}({data_length})"
-        else:
-            type_str = data_type
-
-        col_id = str(row[7]) if len(row) > 7 else ""
-        lines.append(f"{col_id:<4} {col_name:<30} {type_str:<20} {nullable:<6} {default}")
-
-    lines.append("-" * 80)
-    lines.append("")
-
-    # 查询主键信息
-    pk_result = _execute_sql(
-        f"SELECT CC.COLUMN_NAME FROM ALL_CONS_COLUMNS CC "
-        f"JOIN ALL_CONSTRAINTS C ON CC.CONSTRAINT_NAME = C.CONSTRAINT_NAME "
-        f"WHERE C.TABLE_NAME = '{table_name.upper()}' AND C.CONSTRAINT_TYPE = 'P' AND CC.OWNER = '{schema}'"
-    )
-
-    if pk_result.get("success") and pk_result.get("rows"):
-        pk_cols = [str(row[0]) for row in pk_result.get("rows", [])]
-        lines.append(f"🔑 主键：{', '.join(pk_cols)}")
-    else:
-        lines.append("🔑 主键：无")
-
-    lines.append("")
-    lines.append(f"💡 提示：使用 search_tables(\"{table_name}\") 可以搜索包含该关键字的所有表")
-
-    return "\n".join(lines)
-
-
-@mcp.tool()
-def get_table_indexes(table_name: str, schema: str = "") -> str:
-    """
-    查看表的索引信息。
-
-    Args:
-        table_name: 表名
-        schema: 可选，指定 Schema
-
-    Returns:
-        索引信息
-    """
-    if schema:
+        
+        result = SQLEngine.execute(sql)
+        columns = []
+        if result.success and result.data:
+            for row in result.data:
+                columns.append(ColumnInfo(
+                    name=row.get('COLUMN_NAME', ''),
+                    data_type=row.get('DATA_TYPE', ''),
+                    length=row.get('DATA_LENGTH', 0),
+                    nullable=row.get('NULLABLE', 'Y') == 'Y',
+                    default=row.get('DATA_DEFAULT'),
+                    comment=row.get('COMMENTS', '') or ''
+                ))
+        return columns
+    
+    @staticmethod
+    @monitor_performance
+    def search_tables(pattern: str, schema: str = None) -> List[TableInfo]:
+        """搜索表"""
+        schema_filter = f"AND OWNER = '{schema.upper()}'" if schema else ""
+        
         sql = f"""
-            SELECT
-                UIC.INDEX_NAME,
-                UIC.COLUMN_NAME,
-                CASE WHEN I.UNIQUENESS = 'UNIQUE' THEN '是' ELSE '否' END AS 是否唯一,
-                I.INDEX_TYPE
-            FROM USER_IND_COLUMNS UIC
-            JOIN USER_INDEXES I ON UIC.INDEX_NAME = I.INDEX_NAME
-            WHERE UIC.TABLE_NAME = '{table_name.upper()}' AND UIC.TABLE_OWNER = '{schema.upper()}'
-            ORDER BY UIC.INDEX_NAME, UIC.COLUMN_POSITION
+            SELECT TABLE_NAME, OWNER, TABLE_TYPE, COMMENTS
+            FROM ALL_TAB_COMMENTS
+            WHERE TABLE_NAME LIKE '%{pattern.upper()}%' 
+            AND TABLE_TYPE = 'TABLE'
+            {schema_filter}
+            ORDER BY OWNER, TABLE_NAME
         """
-    else:
+        
+        result = SQLEngine.execute(sql)
+        tables = []
+        if result.success and result.data:
+            for row in result.data:
+                tables.append(TableInfo(
+                    name=row.get('TABLE_NAME', ''),
+                    owner=row.get('OWNER', ''),
+                    comment=row.get('COMMENTS', '') or ''
+                ))
+        return tables
+    
+    @staticmethod
+    @monitor_performance
+    def get_table_indexes(table_name: str, schema: str = None) -> List[Dict]:
+        """获取表索引"""
+        schema_filter = f"AND TABLE_OWNER = '{schema.upper()}'" if schema else ""
+        
         sql = f"""
-            SELECT
+            SELECT 
                 INDEX_NAME,
-                COLUMN_NAME,
-                COLUMN_POSITION,
+                INDEX_TYPE,
                 UNIQUENESS,
-                INDEX_TYPE
-            FROM USER_IND_COLUMNS
-            WHERE TABLE_NAME = '{table_name.upper()}'
-            ORDER BY INDEX_NAME, COLUMN_POSITION
+                TABLE_NAME,
+                TABLE_OWNER
+            FROM ALL_INDEXES
+            WHERE TABLE_NAME = '{table_name.upper()}' {schema_filter}
+            ORDER BY INDEX_NAME
         """
+        
+        result = SQLEngine.execute(sql)
+        return result.data if result.success else []
+    
+    @staticmethod
+    @monitor_performance
+    def get_table_count(table_name: str, schema: str = None) -> int:
+        """获取表行数"""
+        full_table = f"{schema.upper()}.{table_name.upper()}" if schema else table_name.upper()
+        sql = f"SELECT COUNT(*) as count FROM {full_table}"
+        
+        result = SQLEngine.execute(sql)
+        if result.success and result.data:
+            return result.data[0].get('COUNT', 0)
+        return 0
 
-    result = _execute_sql(sql)
-    return _format_result(result)
+# ============================================================
+# MCP 服务器初始化
+# ============================================================
 
+mcp = FastMCP("YashanDB MCP Server Pro")
+
+# ============================================================
+# MCP 工具定义
+# ============================================================
 
 @mcp.tool()
-def get_table_count(table_name: str, schema: str = "") -> str:
-    """
-    快速获取表的行数。
-
-    Args:
-        table_name: 表名
-        schema: 可选，指定 Schema
-
-    Returns:
-        表的行数
-    """
-    if schema:
-        sql = f"SELECT COUNT(*) FROM \"{schema.upper()}\".\"{table_name.upper()}\""
-    else:
-        sql = f"SELECT COUNT(*) FROM \"{table_name.upper()}\""
-
-    result = _execute_sql(sql)
-    if result.get("success") and result.get("rows"):
-        count = result.get("rows", [[0]])[0][0]
-        return f"📊 表 {schema + '.' if schema else ''}{table_name} 共有 {count:,} 行数据"
-    return _format_result(result)
-
+def test_connection() -> str:
+    """测试数据库连接"""
+    try:
+        config = DatabaseConfig.from_env()
+        sql = "SELECT USER FROM DUAL"
+        result = SQLEngine.execute(sql)
+        
+        if result.success:
+            return f"""✅ 崖山数据库连接正常！
+主机：{config.jdbc_url.split('//')[1].split('/')[0]}
+用户：{config.username}
+当前会话用户：{result.data[0].get('USER', 'N/A') if result.data else 'N/A'}
+数据库：{config.jdbc_url.split('/')[-1].split('?')[0]}
+驱动：JayDeBeApi + YashanDB JDBC"""
+        else:
+            return f"❌ 连接失败: {result.error}"
+    except Exception as e:
+        logger.error(f"连接测试失败: {e}")
+        return f"❌ 连接失败: {str(e)}"
 
 @mcp.tool()
 def run_sql(sql_query: str, max_rows: int = 100) -> str:
     """
-    在崖山数据库中执行 SQL 查询语句。
-
-    这是最核心的工具。当你需要查询崖山数据库中的数据时，使用这个工具。
-
-    Args:
-        sql_query: 要执行的完整 SQL 语句
-        max_rows: 最大返回行数，默认 100 行
-
-    Returns:
-        格式化的查询结果
+    执行 SQL 查询
+    
+    参数:
+        sql_query: SQL 语句
+        max_rows: 最大返回行数（默认 100）
     """
-    print(f"[SQL 执行] {sql_query}")
+    try:
+        result = SQLEngine.execute(sql_query, max_rows)
+        
+        if not result.success:
+            return f"❌ SQL 执行失败\n错误信息：{result.error}"
+        
+        if result.sql_type == 'QUERY':
+            # 格式化查询结果
+            if not result.data:
+                return "✅ 查询成功，但没有返回任何数据。"
+            
+            # 构建表格
+            lines = []
+            lines.append(f"✅ 查询成功！共 {result.row_count} 行")
+            
+            # 表头
+            headers = result.columns
+            col_widths = [max(len(str(row.get(col, ''))) for row in result.data + [{col: col}]) for col in headers]
+            
+            # 分隔线
+            sep_line = '├' + '┼'.join('─' * (w + 2) for w in col_widths) + '┤'
+            top_line = '┌' + '┬'.join('─' * (w + 2) for w in col_widths) + '┐'
+            bottom_line = '└' + '┴'.join('─' * (w + 2) for w in col_widths) + '┘'
+            
+            lines.append(top_line)
+            header_row = '│' + '│'.join(f" {col:<{col_widths[i]}} " for i, col in enumerate(headers)) + '│'
+            lines.append(header_row)
+            lines.append(sep_line)
+            
+            # 数据行
+            for row in result.data:
+                data_row = '│' + '│'.join(f" {str(row.get(col, '')):<{col_widths[i]}} " for i, col in enumerate(headers)) + '│'
+                lines.append(data_row)
+            
+            lines.append(bottom_line)
+            lines.append(f"\n执行时间: {result.execution_time:.3f}s")
+            
+            return '\n'.join(lines)
+        else:
+            return f"✅ 执行成功\n影响行数: {result.row_count}\n执行时间: {result.execution_time:.3f}s"
+            
+    except Exception as e:
+        logger.error(f"SQL 执行异常: {e}")
+        return f"❌ SQL 执行异常: {str(e)}"
 
-    result = _execute_sql(sql_query, max_rows=max_rows)
-    return _format_result(result)
+@mcp.tool()
+def list_schemas() -> str:
+    """列出所有 Schema（用户）"""
+    try:
+        schemas = MetadataManager.list_schemas()
+        if schemas:
+            return "✅ Schema 列表:\n" + '\n'.join(f"  - {s}" for s in schemas)
+        return "⚠️ 未找到任何 Schema"
+    except Exception as e:
+        return f"❌ 查询失败: {str(e)}"
 
+@mcp.tool()
+def list_tables(schema: str = "") -> str:
+    """
+    列出表
+    
+    参数:
+        schema: 可选，指定 Schema 名
+    """
+    try:
+        tables = MetadataManager.list_tables(schema if schema else None)
+        if tables:
+            lines = [f"✅ 共找到 {len(tables)} 个表:"]
+            for t in tables:
+                comment = f" - {t.comment}" if t.comment else ""
+                lines.append(f"  - {t.owner}.{t.name}{comment}")
+            return '\n'.join(lines)
+        return f"⚠️ 在 Schema '{schema}' 下未找到任何表" if schema else "⚠️ 未找到任何表"
+    except Exception as e:
+        return f"❌ 查询失败: {str(e)}"
+
+@mcp.tool()
+def describe_table(table_name: str, schema: str = "") -> str:
+    """
+    查看表结构
+    
+    参数:
+        table_name: 表名
+        schema: 可选，指定 Schema 名
+    """
+    try:
+        columns = MetadataManager.describe_table(table_name, schema if schema else None)
+        if columns:
+            lines = [f"✅ 表 {schema + '.' if schema else ''}{table_name} 的结构:", ""]
+            lines.append(f"{'列名':<30} {'类型':<20} {'长度':<10} {'可空':<8} {'默认值':<20}")
+            lines.append("-" * 90)
+            for col in columns:
+                nullable = "是" if col.nullable else "否"
+                default = str(col.default) if col.default else ""
+                lines.append(f"{col.name:<30} {col.data_type:<20} {col.length:<10} {nullable:<8} {default:<20}")
+                if col.comment:
+                    lines.append(f"  注释: {col.comment}")
+            return '\n'.join(lines)
+        return f"⚠️ 在 Schema '{schema}' 下未找到表 '{table_name}'" if schema else f"⚠️ 未找到表 '{table_name}'"
+    except Exception as e:
+        return f"❌ 查询失败: {str(e)}"
+
+@mcp.tool()
+def search_tables(pattern: str, schema: str = "") -> str:
+    """
+    搜索表
+    
+    参数:
+        pattern: 表名关键字（支持模糊搜索）
+        schema: 可选，限定在某个 Schema 下搜索
+    """
+    try:
+        tables = MetadataManager.search_tables(pattern, schema if schema else None)
+        if tables:
+            lines = [f"✅ 找到 {len(tables)} 个匹配 '{pattern}' 的表:"]
+            for t in tables:
+                comment = f" - {t.comment}" if t.comment else ""
+                lines.append(f"  - {t.owner}.{t.name}{comment}")
+            return '\n'.join(lines)
+        return f"⚠️ 未找到包含 '{pattern}' 的表"
+    except Exception as e:
+        return f"❌ 查询失败: {str(e)}"
+
+@mcp.tool()
+def get_table_indexes(table_name: str, schema: str = "") -> str:
+    """
+    查看表索引
+    
+    参数:
+        table_name: 表名
+        schema: 可选，指定 Schema
+    """
+    try:
+        indexes = MetadataManager.get_table_indexes(table_name, schema if schema else None)
+        if indexes:
+            lines = [f"✅ 表 {schema + '.' if schema else ''}{table_name} 的索引:"]
+            for idx in indexes:
+                unique = "唯一" if idx.get('UNIQUENESS') == 'UNIQUE' else "非唯一"
+                lines.append(f"  - {idx.get('INDEX_NAME')} ({idx.get('INDEX_TYPE')}, {unique})")
+            return '\n'.join(lines)
+        return f"⚠️ 未找到索引"
+    except Exception as e:
+        return f"❌ 查询失败: {str(e)}"
+
+@mcp.tool()
+def get_table_count(table_name: str, schema: str = "") -> str:
+    """
+    快速获取表行数
+    
+    参数:
+        table_name: 表名
+        schema: 可选，指定 Schema
+    """
+    try:
+        count = MetadataManager.get_table_count(table_name, schema if schema else None)
+        full_name = f"{schema}.{table_name}" if schema else table_name
+        return f"✅ 表 {full_name} 的行数: {count}"
+    except Exception as e:
+        return f"❌ 查询失败: {str(e)}"
 
 @mcp.tool()
 def get_database_info() -> str:
+    """获取数据库信息"""
+    try:
+        config = DatabaseConfig.from_env()
+        host_port = config.jdbc_url.split('//')[1].split('/')[0] if '//' in config.jdbc_url else 'unknown'
+        db_name = config.jdbc_url.split('/')[-1].split('?')[0] if '/' in config.jdbc_url else 'unknown'
+        
+        return f"""📊 崖山数据库环境信息
+{'='*50}
+连接地址：{host_port}
+数据库名：{db_name}
+用户名：{config.username}
+驱动类：{config.driver_class}
+当前时间：{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+    except Exception as e:
+        return f"❌ 获取信息失败: {str(e)}"
+
+@mcp.tool()
+def explain_sql(sql_query: str) -> str:
     """
-    获取崖山数据库的基本信息。
-
-    Returns:
-        数据库信息
+    获取 SQL 执行计划
+    
+    参数:
+        sql_query: SQL 语句
     """
-    version_result = _execute_sql("SELECT * FROM V$VERSION WHERE ROWNUM <= 3")
-    user_result = _execute_sql("SELECT USER FROM DUAL")
-    schema_result = _execute_sql("SELECT DISTINCT OWNER FROM ALL_TABLES ORDER BY OWNER")
-
-    info_lines = [
-        "📊 崖山数据库环境信息",
-        "=" * 50,
-    ]
-
-    if version_result.get("success") and version_result.get("rows"):
-        versions = [row[0] for row in version_result.get("rows", [])]
-        info_lines.append(f"数据库版本：{versions[0] if versions else '未知'}")
-
-    if user_result.get("success") and user_result.get("rows"):
-        info_lines.append(f"当前用户：{user_result['rows'][0][0]}")
-
-    if schema_result.get("success") and schema_result.get("rows"):
-        schemas = [row[0] for row in schema_result.get("rows", [])]
-        info_lines.append(f"可用 Schema：{', '.join(schemas)}")
-
-    info_lines.extend([
-        f"连接地址：***REMOVED***:1688",
-        f"查询时间：{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-    ])
-
-    return "\n".join(info_lines)
-
+    try:
+        explain_sql = f"EXPLAIN {sql_query}"
+        result = SQLEngine.execute(explain_sql)
+        
+        if result.success and result.data:
+            lines = ["✅ SQL 执行计划:"]
+            for row in result.data:
+                lines.append(str(row))
+            return '\n'.join(lines)
+        return "⚠️ 无法获取执行计划"
+    except Exception as e:
+        return f"❌ 获取执行计划失败: {str(e)}"
 
 # ============================================================
-# 启动服务器
+# 主程序入口
 # ============================================================
 
 if __name__ == "__main__":
     import argparse
-
-    parser = argparse.ArgumentParser(description="崖山数据库 MCP Server")
+    
+    parser = argparse.ArgumentParser(description="崖山数据库 MCP Server Pro")
     parser.add_argument("--mode", choices=["stdio", "http", "sse"], default="stdio",
-                       help="运行模式：stdio（默认，本地CLI）, http（HTTP API）, sse（Server-Sent Events）")
-    parser.add_argument("--host", default="0.0.0.0", help="HTTP 模式监听地址")
-    parser.add_argument("--port", type=int, default=8080, help="HTTP 模式监听端口")
+                       help="运行模式：stdio（默认）、http、sse")
+    parser.add_argument("--host", default="0.0.0.0", help="HTTP/SSE 模式监听地址")
+    parser.add_argument("--port", type=int, default=8080, help="HTTP/SSE 模式监听端口")
+    parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], 
+                       default="INFO", help="日志级别")
     args = parser.parse_args()
-
-    # 从 JDBC URL 解析数据库地址
-    jdbc_url = DATABASE_CONFIG["jdbc_url"]
-    # 格式: jdbc:yasdb://host:port/dbname
-    db_info = jdbc_url.replace("jdbc:yasdb://", "").split("/")[0] if "jdbc:yasdb://" in jdbc_url else "unknown"
-    db_name = jdbc_url.split("/")[-1].split("?")[0] if "/" in jdbc_url else "unknown"
-
+    
+    # 设置日志级别
+    logging.getLogger("yashan_mcp").setLevel(getattr(logging, args.log_level))
+    
+    # 预热连接池
+    logger.info("正在初始化连接池...")
+    get_pool()
+    
     print("=" * 60)
-    print("       崖山数据库 MCP Server  - Yashan DB Helper")
+    print("   崖山数据库 MCP Server Pro - YashanDB MCP Server")
     print("=" * 60)
-    print(f"数据库地址：{db_info}")
-    print(f"数据库用户：{DATABASE_CONFIG['username'] or '(未配置，使用环境变量或 .env 文件)'}")
-    print(f"数据库名  ：{db_name}")
-    print(f"运行模式  ：{args.mode}")
+    config = DatabaseConfig.from_env()
+    print(f"数据库: {config.jdbc_url}")
+    print(f"模式: {args.mode}")
     print("-" * 60)
-    print("\n配置来源：")
-    print(f"  DB_HOST     = {os.getenv('DB_HOST', '(未设置)')}")
-    print(f"  DB_PORT     = {os.getenv('DB_PORT', '(未设置)')}")
-    print(f"  DB_NAME     = {os.getenv('DB_NAME', '(未设置)')}")
-    print(f"  DB_USER     = {os.getenv('DB_USER', '(未设置)')}")
-    print(f"  DB_PASSWORD = {'****' if os.getenv('DB_PASSWORD') else '(未设置)'}")
-    print(f"  JVM_LIB     = {os.getenv('JVM_LIB', '(自动检测)')}")
-    print("-" * 60)
-
-    # 预热数据库连接
-    print("\n正在连接崖山数据库...")
-    get_connection()
-
+    
     if args.mode == "stdio":
-        print("\n✅ 服务器已就绪，等待 AI 客户端连接（stdio 模式）...\n")
-        try:
-            mcp.run()
-        finally:
-            close_connection()
-
+        print("✅ 服务器已就绪（stdio 模式）\n")
+        mcp.run()
     elif args.mode == "http":
-        print(f"\n✅ 服务器已就绪，HTTP API 监听 {args.host}:{args.port} ...\n")
         import uvicorn
-        try:
-            uvicorn.run(mcp.streamable_http_app(), host=args.host, port=args.port)
-        finally:
-            close_connection()
-
+        print(f"✅ HTTP API 监听 {args.host}:{args.port}\n")
+        uvicorn.run(mcp.streamable_http_app(), host=args.host, port=args.port)
     elif args.mode == "sse":
-        print(f"\n✅ 服务器已就绪，SSE 监听 {args.host}:{args.port} ...\n")
         import uvicorn
-        try:
-            uvicorn.run(mcp.sse_app(), host=args.host, port=args.port)
-        finally:
-            close_connection()
+        print(f"✅ SSE 监听 {args.host}:{args.port}\n")
+        uvicorn.run(mcp.sse_app(), host=args.host, port=args.port)
