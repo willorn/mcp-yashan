@@ -52,7 +52,7 @@ cp .env.example .env
 
 ```env
 # 数据库地址
-DB_HOST=***REMOVED***
+DB_HOST=10.9.18.73
 
 # 数据库端口
 DB_PORT=1688
@@ -61,7 +61,7 @@ DB_PORT=1688
 DB_NAME=yashandb
 
 # 数据库用户名
-DB_USER=***REMOVED***
+DB_USER=SZ_NCIS_SYSTEM
 
 # 数据库密码
 DB_PASSWORD=your_password
@@ -128,9 +128,9 @@ test_connection()
 输出：
 ```
 ✅ 崖山数据库连接正常！
-主机：***REMOVED***:1688
-用户：***REMOVED***
-当前会话用户：***REMOVED***
+主机：10.9.18.73:1688
+用户：SZ_NCIS_SYSTEM
+当前会话用户：SZ_NCIS_SYSTEM
 数据库：yashandb
 驱动：JayDeBeApi + YashanDB JDBC
 ```
@@ -140,7 +140,7 @@ test_connection()
 ```python
 # 使用 MCP 工具
 run_sql(
-    sql_query="SELECT * FROM ***REMOVED***.XJR_MESSAGE_TEMPLATE WHERE ROWNUM <= 5",
+    sql_query="SELECT * FROM SZ_NCIS_SYSTEM.XJR_MESSAGE_TEMPLATE WHERE ROWNUM <= 5",
     max_rows=10
 )
 ```
@@ -151,7 +151,7 @@ run_sql(
 # 使用 MCP 工具
 describe_table(
     table_name="XJR_MESSAGE_TEMPLATE",
-    schema="***REMOVED***"
+    schema="SZ_NCIS_SYSTEM"
 )
 ```
 
@@ -161,7 +161,7 @@ describe_table(
 # 使用 MCP 工具
 search_tables(
     pattern="MESSAGE",
-    schema="***REMOVED***"
+    schema="SZ_NCIS_SYSTEM"
 )
 ```
 
@@ -201,10 +201,10 @@ LOG_LEVEL=INFO
       "command": "python",
       "args": ["/path/to/yashan_mcp_server_pro.py"],
       "env": {
-        "DB_HOST": "***REMOVED***",
+        "DB_HOST": "10.9.18.73",
         "DB_PORT": "1688",
         "DB_NAME": "yashandb",
-        "DB_USER": "***REMOVED***",
+        "DB_USER": "SZ_NCIS_SYSTEM",
         "DB_PASSWORD": "your_password"
       }
     }
