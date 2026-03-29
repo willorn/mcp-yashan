@@ -14,6 +14,13 @@
 - 🐳 Docker 支持，易于部署
 - ⚡ 使用 JDBC 驱动，兼容性好
 
+## 前置要求
+
+- Python 3.12+
+- Java 17+（用于运行 JDBC 驱动）
+- 崖山数据库或其他兼容数据库
+- 崖山 JDBC 驱动（[下载地址](https://www.yashandb.com/download)）
+
 ## 支持的数据库
 
 - 崖山数据库（YashanDB）
