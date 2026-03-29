@@ -393,16 +393,15 @@ class MetadataManager:
         """列出表"""
         if schema:
             sql = """
-                SELECT TABLE_NAME, OWNER, TABLE_TYPE, COMMENTS
-                FROM ALL_TAB_COMMENTS
-                WHERE OWNER = '{}' AND TABLE_TYPE = 'TABLE'
+                SELECT TABLE_NAME, OWNER
+                FROM ALL_TABLES
+                WHERE OWNER = '{}'
                 ORDER BY TABLE_NAME
             """.format(schema.upper())
         else:
             sql = """
-                SELECT TABLE_NAME, OWNER, TABLE_TYPE, COMMENTS
-                FROM ALL_TAB_COMMENTS
-                WHERE TABLE_TYPE = 'TABLE'
+                SELECT TABLE_NAME, OWNER
+                FROM ALL_TABLES
                 ORDER BY OWNER, TABLE_NAME
             """
         
@@ -413,8 +412,8 @@ class MetadataManager:
                 tables.append(TableInfo(
                     name=row.get('TABLE_NAME', ''),
                     owner=row.get('OWNER', ''),
-                    table_type=row.get('TABLE_TYPE', 'TABLE'),
-                    comment=row.get('COMMENTS', '') or ''
+                    table_type='TABLE',
+                    comment=''
                 ))
         return tables
     
@@ -430,8 +429,7 @@ class MetadataManager:
                 DATA_TYPE,
                 DATA_LENGTH,
                 NULLABLE,
-                DATA_DEFAULT,
-                COMMENTS
+                DATA_DEFAULT
             FROM ALL_TAB_COLUMNS
             WHERE TABLE_NAME = '{table_name.upper()}' {schema_filter}
             ORDER BY COLUMN_ID
@@ -447,7 +445,7 @@ class MetadataManager:
                     length=row.get('DATA_LENGTH', 0),
                     nullable=row.get('NULLABLE', 'Y') == 'Y',
                     default=row.get('DATA_DEFAULT'),
-                    comment=row.get('COMMENTS', '') or ''
+                    comment=''
                 ))
         return columns
     
@@ -458,10 +456,9 @@ class MetadataManager:
         schema_filter = f"AND OWNER = '{schema.upper()}'" if schema else ""
         
         sql = f"""
-            SELECT TABLE_NAME, OWNER, TABLE_TYPE, COMMENTS
-            FROM ALL_TAB_COMMENTS
+            SELECT TABLE_NAME, OWNER
+            FROM ALL_TABLES
             WHERE TABLE_NAME LIKE '%{pattern.upper()}%' 
-            AND TABLE_TYPE = 'TABLE'
             {schema_filter}
             ORDER BY OWNER, TABLE_NAME
         """
@@ -473,7 +470,7 @@ class MetadataManager:
                 tables.append(TableInfo(
                     name=row.get('TABLE_NAME', ''),
                     owner=row.get('OWNER', ''),
-                    comment=row.get('COMMENTS', '') or ''
+                    comment=''
                 ))
         return tables
     
@@ -554,7 +551,7 @@ def run_sql(sql_query: str, max_rows: int = 100) -> str:
         result = SQLEngine.execute(sql_query, max_rows)
         
         if not result.success:
-            return f"❌ SQL 执行失败\n错误信息：{result.error}"
+            return "❌ SQL 执行失败\n错误信息：" + str(result.error)
         
         if result.sql_type == 'QUERY':
             # 格式化查询结果
@@ -563,7 +560,7 @@ def run_sql(sql_query: str, max_rows: int = 100) -> str:
             
             # 构建表格
             lines = []
-            lines.append(f"✅ 查询成功！共 {result.row_count} 行")
+            lines.append("✅ 查询成功！共 " + str(result.row_count) + " 行")
             
             # 表头
             headers = result.columns
@@ -575,25 +572,25 @@ def run_sql(sql_query: str, max_rows: int = 100) -> str:
             bottom_line = '└' + '┴'.join('─' * (w + 2) for w in col_widths) + '┘'
             
             lines.append(top_line)
-            header_row = '│' + '│'.join(f" {col:<{col_widths[i]}} " for i, col in enumerate(headers)) + '│'
+            header_row = '│' + '│'.join(" " + str(col).ljust(col_widths[i]) + " " for i, col in enumerate(headers)) + '│'
             lines.append(header_row)
             lines.append(sep_line)
             
             # 数据行
             for row in result.data:
-                data_row = '│' + '│'.join(f" {str(row.get(col, '')):<{col_widths[i]}} " for i, col in enumerate(headers)) + '│'
+                data_row = '│' + '│'.join(" " + str(row.get(col, '')).ljust(col_widths[i]) + " " for i, col in enumerate(headers)) + '│'
                 lines.append(data_row)
             
             lines.append(bottom_line)
-            lines.append(f"\n执行时间: {result.execution_time:.3f}s")
+            lines.append("\n执行时间: " + str(round(result.execution_time, 3)) + "s")
             
             return '\n'.join(lines)
         else:
-            return f"✅ 执行成功\n影响行数: {result.row_count}\n执行时间: {result.execution_time:.3f}s"
+            return "✅ 执行成功\n影响行数: " + str(result.row_count) + "\n执行时间: " + str(round(result.execution_time, 3)) + "s"
             
     except Exception as e:
-        logger.error(f"SQL 执行异常: {e}")
-        return f"❌ SQL 执行异常: {str(e)}"
+        logger.error("SQL 执行异常: " + str(e))
+        return "❌ SQL 执行异常: " + str(e)
 
 @mcp.tool()
 def list_schemas() -> str:
