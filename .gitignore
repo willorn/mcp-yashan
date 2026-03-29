@@ -63,5 +63,5 @@ htmlcov/
 .cursor/
 
 # JDBC Driver (download separately from https://www.yashandb.com/download)
-yashandb-jdbc-*.jar
-*.jar
+# yashandb-jdbc-*.jar
+# *.jar
