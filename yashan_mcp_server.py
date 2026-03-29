@@ -683,14 +683,13 @@ def get_table_indexes(table_name: str, schema: str = "") -> str:
         schema: 可选，指定 Schema
     """
     try:
-        indexes = MetadataManager.get_table_indexes(table_name, schema if schema else None)
-        if indexes:
-            lines = [f"✅ 表 {schema + '.' if schema else ''}{table_name} 的索引:"]
-            for idx in indexes:
-                unique = "唯一" if idx.get('UNIQUENESS') == 'UNIQUE' else "非唯一"
-                lines.append(f"  - {idx.get('INDEX_NAME')} ({idx.get('INDEX_TYPE')}, {unique})")
-            return '\n'.join(lines)
-        return f"⚠️ 未找到索引"
+        schema_filter = f"AND OWNER = '{schema.upper()}'" if schema else ""
+        sql = f"""SELECT INDEX_NAME, INDEX_TYPE, UNIQUENESS 
+                 FROM ALL_INDEXES 
+                 WHERE TABLE_NAME = '{table_name.upper()}' {schema_filter}
+                 ORDER BY INDEX_NAME"""
+        result = run_sql(sql, max_rows=50)
+        return result
     except Exception as e:
         return f"❌ 查询失败: {str(e)}"
 
