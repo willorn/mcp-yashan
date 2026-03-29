@@ -14,7 +14,7 @@
 - 🐳 **Docker 支持**，易于部署
 - ⚡ **连接池管理**：高效的数据库连接管理
 - 📈 **性能监控**：内置性能监控和日志记录
-- 🔄 **多种运行模式**：支持 stdio、sse、http 三种模式
+- 🔄 **多种运行模式**：默认提供基于 HTTP 的 MCP 服务，也支持 stdio、sse
 - 🛡️ **完善的错误处理**：详细的错误信息和日志记录
 - 📝 **Oracle 兼容**：高度兼容 Oracle SQL 语法
 
@@ -70,6 +70,7 @@ DB_PORT=1688
 DB_NAME=yashandb
 DB_USER=your_username
 DB_PASSWORD=your_password
+MCP_AUTH_TOKEN=replace-with-a-long-random-token
 ```
 
 ### 方式二：使用环境变量
@@ -80,6 +81,7 @@ export DB_PORT=1688
 export DB_NAME=yashandb
 export DB_USER=your_username
 export DB_PASSWORD=your_password
+export MCP_AUTH_TOKEN=replace-with-a-long-random-token
 python yashan_mcp_server.py
 ```
 
@@ -116,10 +118,46 @@ export JVM_LIB=/path/to/libjvm.so
 ### 启动 MCP 服务
 
 ```bash
-python yashan_mcp_server.py
+python yashan_mcp_server.py --mode http --host 0.0.0.0 --port 8080
 ```
 
+默认模式就是 `http`，上面的命令会在局域网暴露 MCP 服务。
+
+可直接用于局域网部署的启动命令：
+
+```bash
+export DB_HOST=your_database_host
+export DB_PORT=1688
+export DB_NAME=yashandb
+export DB_USER=your_username
+export DB_PASSWORD=your_password
+export MCP_AUTH_TOKEN='replace-with-a-long-random-token'
+python yashan_mcp_server.py --host 0.0.0.0 --port 8080
+```
+
+启动后可先验证健康检查：
+
+```bash
+curl http://127.0.0.1:8080/healthz
+```
+
+### 局域网 HTTP 接入
+
+- MCP 地址：`http://<server-ip>:8080/mcp`
+- 健康检查：`http://<server-ip>:8080/healthz`
+- 鉴权方式：`Authorization: Bearer <MCP_AUTH_TOKEN>`
+
+示例：
+
+```bash
+curl http://127.0.0.1:8080/healthz
+```
+
+`/mcp` 是 MCP 协议入口，应该由 MCP 客户端访问；直接用 `curl` 访问通常会得到协议层错误响应，这是正常现象。
+
 ### Claude Desktop 配置
+
+适用于本机 `stdio` 集成，不适用于远程 HTTP 接入。
 
 编辑 `~/.claude.json`：
 
@@ -135,6 +173,8 @@ python yashan_mcp_server.py
 ```
 
 ### Cursor 配置
+
+适用于本机 `stdio` 集成，不适用于远程 HTTP 接入。
 
 编辑 `~/.cursor/mcp.json`：
 
@@ -189,12 +229,36 @@ AI：调用 get_table_count("CUS_DEVICE")
 
 ## 运行模式
 
-### stdio 模式（默认）
+### HTTP 模式（默认，推荐用于局域网部署）
+
+```bash
+python yashan_mcp_server.py --host 0.0.0.0 --port 8080
+```
+
+MCP endpoint 固定为：
+
+```text
+http://<server-ip>:8080/mcp
+```
+
+健康检查：
+
+```text
+http://<server-ip>:8080/healthz
+```
+
+如果启用了 `MCP_AUTH_TOKEN`，客户端必须携带：
+
+```text
+Authorization: Bearer <token>
+```
+
+### stdio 模式
 
 适用于命令行和本地集成：
 
 ```bash
-python yashan_mcp_server.py
+python yashan_mcp_server.py --mode stdio
 ```
 
 ### SSE 模式（推荐用于 IDE 集成）
@@ -205,11 +269,7 @@ python yashan_mcp_server.py
 python yashan_mcp_server.py --mode sse --port 8080
 ```
 
-### HTTP 模式
-
-```bash
-python yashan_mcp_server.py --mode http --port 8080
-```
+SSE 入口为 `http://<server-ip>:8080/sse`，消息入口为 `http://<server-ip>:8080/messages/`。
 
 ## 日志
 
@@ -220,6 +280,8 @@ python yashan_mcp_server.py --mode http --port 8080
 - `INFO` - 一般信息（默认）
 - `WARNING` - 警告信息
 - `ERROR` - 错误信息
+
+`stdio` 模式下日志会输出到 `stderr`，避免污染 MCP 的 JSON-RPC 数据流。
 
 ## 常见问题
 
@@ -244,6 +306,14 @@ describe_table("TABLE_NAME", "SCHEMA_NAME")
 ```python
 explain_sql("SELECT * FROM employees WHERE salary > 10000")
 ```
+
+### Q: 局域网 HTTP 客户端应该连哪个地址？
+
+使用 `http://<server-ip>:<port>/mcp`，不要连接根路径 `/`。
+
+### Q: 如何做存活探测？
+
+访问 `http://<server-ip>:<port>/healthz`，返回 `{"ok": true, ...}` 即表示服务进程可用。
 
 ## 开发
 

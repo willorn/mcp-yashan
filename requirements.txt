@@ -2,6 +2,7 @@
 
 # MCP 框架
 fastmcp>=0.4.0
+starlette>=0.37.0
 
 # JDBC 连接
 jpype1>=1.4.0

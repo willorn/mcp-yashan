@@ -29,6 +29,8 @@ from typing import Optional, List, Dict, Any, Tuple, Union
 from contextlib import contextmanager
 from dataclasses import dataclass, asdict
 from functools import wraps
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 # ============================================================
 # 配置加载
@@ -61,7 +63,7 @@ def setup_logging():
         level=getattr(logging, log_level, logging.INFO),
         format=log_format,
         handlers=[
-            logging.StreamHandler(sys.stdout),
+            logging.StreamHandler(sys.stderr),
             logging.FileHandler(
                 os.path.join(os.path.dirname(__file__), 'yashan_mcp.log'),
                 encoding='utf-8'
@@ -71,6 +73,11 @@ def setup_logging():
     return logging.getLogger("yashan_mcp")
 
 logger = setup_logging()
+
+
+def _to_display_str(value: Any) -> str:
+    """将 JDBC 返回值安全转换为可展示字符串"""
+    return "" if value is None else str(value)
 
 # ============================================================
 # 数据模型
@@ -286,9 +293,12 @@ class SQLEngine:
     # SQL 类型识别
     SQL_TYPES = {
         'SELECT': 'QUERY',
+        'WITH': 'QUERY',
+        'EXPLAIN': 'QUERY',
         'INSERT': 'DML',
         'UPDATE': 'DML',
         'DELETE': 'DML',
+        'MERGE': 'DML',
         'CREATE': 'DDL',
         'ALTER': 'DDL',
         'DROP': 'DDL',
@@ -307,11 +317,20 @@ class SQLEngine:
         return cls.SQL_TYPES.get(first_word, 'UNKNOWN')
     
     @classmethod
+    def _can_manage_transactions(cls, conn) -> bool:
+        """仅在连接未启用 auto-commit 时手动提交/回滚"""
+        try:
+            return not conn.jconn.getAutoCommit()
+        except Exception:
+            return False
+
+    @classmethod
     @monitor_performance
     def execute(cls, sql: str, max_rows: int = 1000) -> SQLResult:
         """执行 SQL"""
         start_time = time.time()
         sql_type = cls.get_sql_type(sql)
+        conn = None
         
         try:
             with get_pool().get_connection() as conn:
@@ -346,6 +365,8 @@ class SQLEngine:
                         )
                     else:
                         # DML/DDL 操作
+                        if sql_type in {'DML', 'DDL', 'TCL'} and cls._can_manage_transactions(conn):
+                            conn.commit()
                         row_count = cursor.rowcount if hasattr(cursor, 'rowcount') else 0
                         return SQLResult(
                             success=True,
@@ -358,6 +379,11 @@ class SQLEngine:
                     cursor.close()
                     
         except Exception as e:
+            if conn and sql_type in {'DML', 'DDL', 'TCL'} and cls._can_manage_transactions(conn):
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
             logger.error(f"SQL 执行失败: {sql[:100]}... 错误: {e}")
             return SQLResult(
                 success=False,
@@ -513,6 +539,63 @@ class MetadataManager:
 
 mcp = FastMCP("YashanDB MCP Server Pro")
 
+
+class BearerAuthMiddleware:
+    """为 MCP 入口提供可选 Bearer Token 鉴权"""
+
+    def __init__(self, app, token: str, protected_prefixes: List[str]):
+        self.app = app
+        self.token = token
+        self.protected_prefixes = tuple(protected_prefixes)
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not self.token:
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope, receive=receive)
+        if request.url.path.startswith(self.protected_prefixes):
+            auth_header = request.headers.get("authorization", "")
+            expected = f"Bearer {self.token}"
+            if auth_header != expected:
+                response = JSONResponse(
+                    {"error": "Unauthorized", "message": "Missing or invalid bearer token"},
+                    status_code=401,
+                )
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
+class HealthcheckApp:
+    """在现有 ASGI 应用前增加健康检查入口"""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope.get("path") == "/healthz":
+            response = JSONResponse({"ok": True, "service": "yashan-mcp"})
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
+def create_http_app(auth_token: str):
+    """创建带健康检查和鉴权的 HTTP MCP 应用"""
+    http_app = mcp.streamable_http_app()
+    if auth_token:
+        http_app = BearerAuthMiddleware(http_app, auth_token, ["/mcp"])
+    return HealthcheckApp(http_app)
+
+
+def create_sse_app(auth_token: str):
+    """创建带健康检查和鉴权的 SSE MCP 应用"""
+    sse_app = mcp.sse_app()
+    if auth_token:
+        sse_app = BearerAuthMiddleware(sse_app, auth_token, ["/sse", "/messages"])
+    return HealthcheckApp(sse_app)
+
 # ============================================================
 # MCP 工具定义
 # ============================================================
@@ -640,10 +723,15 @@ def describe_table(table_name: str, schema: str = "") -> str:
             lines.append("-" * 90)
             for col in columns:
                 nullable = "是" if col.nullable else "否"
-                default = str(col.default) if col.default else ""
-                lines.append(f"{col.name:<30} {col.data_type:<20} {col.length:<10} {nullable:<8} {default:<20}")
+                name = _to_display_str(col.name)
+                data_type = _to_display_str(col.data_type)
+                length = _to_display_str(col.length)
+                default = _to_display_str(col.default)
+                lines.append(
+                    f"{name:<30} {data_type:<20} {length:<10} {nullable:<8} {default:<20}"
+                )
                 if col.comment:
-                    lines.append(f"  注释: {col.comment}")
+                    lines.append(f"  注释: {_to_display_str(col.comment)}")
             return '\n'.join(lines)
         return f"⚠️ 在 Schema '{schema}' 下未找到表 '{table_name}'" if schema else f"⚠️ 未找到表 '{table_name}'"
     except Exception as e:
@@ -733,13 +821,15 @@ def explain_sql(sql_query: str) -> str:
         sql_query: SQL 语句
     """
     try:
-        explain_sql = f"EXPLAIN {sql_query}"
-        result = SQLEngine.execute(explain_sql)
+        explain_statement = f"EXPLAIN {sql_query}"
+        result = SQLEngine.execute(explain_statement, max_rows=200)
         
         if result.success and result.data:
             lines = ["✅ SQL 执行计划:"]
             for row in result.data:
-                lines.append(str(row))
+                plan_line = _to_display_str(row.get("PLAN_DESCRIPTION", ""))
+                if plan_line:
+                    lines.append(plan_line)
             return '\n'.join(lines)
         return "⚠️ 无法获取执行计划"
     except Exception as e:
@@ -753,10 +843,15 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="崖山数据库 MCP Server Pro")
-    parser.add_argument("--mode", choices=["stdio", "http", "sse"], default="stdio",
-                       help="运行模式：stdio（默认）、http、sse")
+    parser.add_argument("--mode", choices=["stdio", "http", "sse"], default="http",
+                       help="运行模式：http（默认）、stdio、sse")
     parser.add_argument("--host", default="0.0.0.0", help="HTTP/SSE 模式监听地址")
     parser.add_argument("--port", type=int, default=8080, help="HTTP/SSE 模式监听端口")
+    parser.add_argument(
+        "--auth-token",
+        default=os.getenv("MCP_AUTH_TOKEN", ""),
+        help="可选 Bearer Token；也可通过 MCP_AUTH_TOKEN 环境变量设置",
+    )
     parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], 
                        default="INFO", help="日志级别")
     args = parser.parse_args()
@@ -767,23 +862,25 @@ if __name__ == "__main__":
     # 预热连接池
     logger.info("正在初始化连接池...")
     get_pool()
-    
-    print("=" * 60)
-    print("   崖山数据库 MCP Server Pro - YashanDB MCP Server")
-    print("=" * 60)
+
     config = DatabaseConfig.from_env()
-    print(f"数据库: {config.jdbc_url}")
-    print(f"模式: {args.mode}")
-    print("-" * 60)
+    logger.info("YashanDB MCP Server 启动中")
+    logger.info("数据库: %s", config.jdbc_url)
+    logger.info("模式: %s", args.mode)
     
     if args.mode == "stdio":
-        print("✅ 服务器已就绪（stdio 模式）\n")
         mcp.run()
     elif args.mode == "http":
         import uvicorn
-        print(f"✅ HTTP API 监听 {args.host}:{args.port}\n")
-        uvicorn.run(mcp.streamable_http_app(), host=args.host, port=args.port)
+        if args.auth_token:
+            logger.info("HTTP MCP 鉴权已启用")
+        logger.info("HTTP MCP 监听地址: http://%s:%s/mcp", args.host, args.port)
+        logger.info("健康检查地址: http://%s:%s/healthz", args.host, args.port)
+        uvicorn.run(create_http_app(args.auth_token), host=args.host, port=args.port)
     elif args.mode == "sse":
         import uvicorn
-        print(f"✅ SSE 监听 {args.host}:{args.port}\n")
-        uvicorn.run(mcp.sse_app(), host=args.host, port=args.port)
+        if args.auth_token:
+            logger.info("SSE MCP 鉴权已启用")
+        logger.info("SSE MCP 入口: http://%s:%s/sse", args.host, args.port)
+        logger.info("健康检查地址: http://%s:%s/healthz", args.host, args.port)
+        uvicorn.run(create_sse_app(args.auth_token), host=args.host, port=args.port)
