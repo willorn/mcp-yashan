@@ -1,0 +1,18 @@
+# 崖山数据库 MCP Server Docker Compose 配置
+version: '3.8'
+
+services:
+  yashan-mcp:
+    build: .
+    container_name: yashan-mcp-server
+    ports:
+      - "8080:8080"  # HTTP API 端口
+    environment:
+      - DB_HOST=***REMOVED***
+      - DB_PORT=1688
+      - DB_USER=***REMOVED***
+      - DB_PASSWORD=***REMOVED***
+      - DB_NAME=yashandb
+    restart: unless-stopped
+    # 注意：Java 需要在容器内运行，JDK 镜像会比较大
+    # 也可以挂载宿主机的 Java路径
