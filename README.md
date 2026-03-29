@@ -52,23 +52,54 @@ docker run -d -p 8080:8080 --name yashan-mcp yashan-mcp
 
 ## 配置
 
-### 1. 修改数据库配置
+### 方式一：使用 .env 文件（推荐）
 
-编辑 `config.py` 文件，修改数据库连接信息：
-
-```python
-DATABASE_CONFIG = {
-    "driver_class": "com.yashandb.jdbc.Driver",
-    "jdbc_url": "jdbc:yasdb://localhost:1688/yashandb",
-    "username": "your_username",
-    "password": "your_password",
-    "jvm_lib": "/path/to/your/libjvm.so",
-}
+1. 复制配置模板：
+```bash
+cp .env.example .env
 ```
 
-### 2. 指定 JVM 路径
+2. 编辑 `.env` 文件，填入你的数据库信息：
+```bash
+DB_HOST=your_database_host
+DB_PORT=1688
+DB_NAME=yashandb
+DB_USER=your_username
+DB_PASSWORD=your_password
+```
 
-根据你的系统，修改 `jvm_lib` 配置：
+### 方式二：使用环境变量
+
+```bash
+export DB_HOST=your_database_host
+export DB_PORT=1688
+export DB_NAME=yashandb
+export DB_USER=your_username
+export DB_PASSWORD=your_password
+python yashan_mcp_server.py
+```
+
+### 方式三：使用完整的 JDBC URL
+
+如果你的数据库有特殊的连接参数，可以直接设置完整的 JDBC URL：
+
+```bash
+export DB_JDBC_URL="jdbc:yasdb://host:port/dbname?param=value"
+```
+
+### JVM 配置
+
+JVM 路径会自动检测，也可以手动指定：
+
+| 系统 | 示例路径 |
+|------|---------|
+| macOS | `/Library/Java/JavaVirtualMachines/jdk-17/Contents/Home/lib/server/libjvm.dylib` |
+| Linux | `/usr/lib/jvm/java-17-openjdk/lib/server/libjvm.so` |
+| Windows | `C:\Program Files\Java\jdk-17\bin\server\jvm.dll` |
+
+```bash
+export JVM_LIB=/path/to/libjvm.so
+```
 
 | 系统 | 示例路径 |
 |------|---------|

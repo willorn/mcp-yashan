@@ -9,7 +9,7 @@
 
 使用 JayDeBeApi + JDBC 驱动连接崖山数据库。
 
-优化版：支持多 Schema 自动降级、模糊搜索表、增强元数据查询
+配置优先级：环境变量 > .env 文件 > 默认值
 """
 
 from mcp.server.fastmcp import FastMCP
@@ -19,21 +19,45 @@ import os
 from typing import Optional, List, Dict, Any
 
 # ============================================================
-# 配置部分
+# 配置加载
 # ============================================================
+
+def _load_env_file():
+    """加载 .env 文件"""
+    env_file = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(env_file):
+        with open(env_file, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), value.strip())
+
+# 加载 .env 文件（如果存在）
+_load_env_file()
 
 # JDBC 驱动路径
 JDBC_DRIVER_PATH = os.path.join(os.path.dirname(__file__), "yashandb-jdbc-1.7.19-21.jar")
 
-# 崖山数据库 JDBC URL（支持环境变量覆盖）
-JDBC_URL = os.getenv("DB_JDBC_URL", "jdbc:yasdb://localhost:1688/yashandb?failover=on&failoverType=session&failoverMethod=basic&failoverRetries=5&failoverDelay=1")
+# 崖山数据库 JDBC URL
+# 优先级：环境变量 DB_JDBC_URL > 环境变量 DB_HOST > 默认值
+def _get_jdbc_url():
+    """获取 JDBC URL"""
+    if os.getenv("DB_JDBC_URL"):
+        return os.getenv("DB_JDBC_URL")
+    host = os.getenv("DB_HOST", "localhost")
+    port = os.getenv("DB_PORT", "1688")
+    db_name = os.getenv("DB_NAME", "yashandb")
+    return f"jdbc:yasdb://{host}:{port}/{db_name}?failover=on&failoverType=session&failoverMethod=basic&failoverRetries=5&failoverDelay=1"
 
-# 数据库连接配置（支持环境变量覆盖）
+JDBC_URL = _get_jdbc_url()
+
+# 数据库连接配置
 DATABASE_CONFIG = {
-    "driver_class": "com.yashandb.jdbc.Driver",
+    "driver_class": os.getenv("DB_DRIVER_CLASS", "com.yashandb.jdbc.Driver"),
     "jdbc_url": JDBC_URL,
-    "username": os.getenv("DB_USER", "your_username"),
-    "password": os.getenv("DB_PASSWORD", "your_password"),
+    "username": os.getenv("DB_USER", ""),
+    "password": os.getenv("DB_PASSWORD", ""),
     "jvm_lib": os.getenv("JVM_LIB", ""),  # 自动检测
 }
 
@@ -654,13 +678,27 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8080, help="HTTP 模式监听端口")
     args = parser.parse_args()
 
+    # 从 JDBC URL 解析数据库地址
+    jdbc_url = DATABASE_CONFIG["jdbc_url"]
+    # 格式: jdbc:yasdb://host:port/dbname
+    db_info = jdbc_url.replace("jdbc:yasdb://", "").split("/")[0] if "jdbc:yasdb://" in jdbc_url else "unknown"
+    db_name = jdbc_url.split("/")[-1].split("?")[0] if "/" in jdbc_url else "unknown"
+
     print("=" * 60)
     print("       崖山数据库 MCP Server  - Yashan DB Helper")
     print("=" * 60)
-    print(f"数据库地址：***REMOVED***:1688")
-    print(f"数据库用户：{DATABASE_CONFIG['username']}")
-    print(f"数据库名  ：yashandb")
+    print(f"数据库地址：{db_info}")
+    print(f"数据库用户：{DATABASE_CONFIG['username'] or '(未配置，使用环境变量或 .env 文件)'}")
+    print(f"数据库名  ：{db_name}")
     print(f"运行模式  ：{args.mode}")
+    print("-" * 60)
+    print("\n配置来源：")
+    print(f"  DB_HOST     = {os.getenv('DB_HOST', '(未设置)')}")
+    print(f"  DB_PORT     = {os.getenv('DB_PORT', '(未设置)')}")
+    print(f"  DB_NAME     = {os.getenv('DB_NAME', '(未设置)')}")
+    print(f"  DB_USER     = {os.getenv('DB_USER', '(未设置)')}")
+    print(f"  DB_PASSWORD = {'****' if os.getenv('DB_PASSWORD') else '(未设置)'}")
+    print(f"  JVM_LIB     = {os.getenv('JVM_LIB', '(自动检测)')}")
     print("-" * 60)
 
     # 预热数据库连接

@@ -42,6 +42,7 @@ logs/
 config_local.py
 .env
 .env.local
+.env.*.local
 
 # macOS
 .DS_Store
