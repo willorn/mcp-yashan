@@ -1,12 +1,8 @@
-# 崖山数据库 MCP Server 依赖
+# 崖山数据库 MCP SSE Server 依赖
 
-# MCP 框架
-fastmcp>=0.4.0
+# Web 框架
 starlette>=0.37.0
-
-# JDBC 连接
-jpype1>=1.4.0
-jaydebeapi>=1.2.3
+uvicorn>=0.27.0
 
 # 环境变量管理
 python-dotenv>=1.0.0

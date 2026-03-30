@@ -1,6 +1,6 @@
-# 崖山数据库 MCP Server
+# 崖山数据库 MCP SSE Server
 
-一个用于连接崖山数据库（YashanDB）的 MCP（Model Context Protocol）服务器，让 AI 助手能够自然语言查询崖山数据库。
+一个用于连接崖山数据库（YashanDB）的 MCP（Model Context Protocol）SSE 服务器，让 AI 助手能够自然语言查询崖山数据库。
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
@@ -8,22 +8,19 @@
 ## 特性
 
 - 🔌 **完整的数据库操作**：支持查询、插入、更新、删除等所有 SQL 操作
-- 🤖 **MCP 协议支持**：与 Claude Desktop / Cursor / Trae 无缝集成
+- 🤖 **MCP SSE 协议支持**：与 Claude Desktop / Cursor / Trae 无缝集成
 - 📊 **元数据管理**：表结构查看、索引查询、表搜索等功能
 - 🔍 **支持多 Schema 自动降级**
-- 🐳 **Docker 支持**，易于部署
-- ⚡ **连接池管理**：高效的数据库连接管理
-- 📈 **性能监控**：内置性能监控和日志记录
-- 🔄 **多种运行模式**：默认提供基于 HTTP 的 MCP 服务，也支持 stdio、sse
+- ⚡ **跨平台兼容**：使用 Java 子进程调用 JDBC，支持 Windows 和 Mac
 - 🛡️ **完善的错误处理**：详细的错误信息和日志记录
 - 📝 **Oracle 兼容**：高度兼容 Oracle SQL 语法
 
 ## 前置要求
 
-- Python 3.12+
-- Java 17+（用于运行 JDBC 驱动）
+- Python 3.10+
+- Java 17+（JDK，需要 javac 和 java 命令）
 - 崖山数据库或其他兼容数据库
-- 崖山 JDBC 驱动（[下载地址](https://www.yashandb.com/download)）
+- 崖山 JDBC 驱动（`yashandb-jdbc-1.7.19-21.jar`）
 
 ## 支持的数据库
 
@@ -32,31 +29,13 @@
 
 ## 安装
 
-### 前置要求
-
-- Python 3.12+
-- Java 17+（用于运行 JDBC 驱动）
-- 崖山数据库或其他兼容数据库
-
-### 方式一：pip 安装
-
 ```bash
 pip install -r requirements.txt
 ```
 
-### 方式二：Docker 运行
-
-```bash
-# 构建镜像
-docker build -t yashan-mcp .
-
-# 运行容器
-docker run -d -p 8080:8080 --name yashan-mcp yashan-mcp
-```
-
 ## 配置
 
-### 方式一：使用 .env 文件（推荐）
+### 使用 .env 文件（推荐）
 
 1. 复制配置模板：
 ```bash
@@ -70,10 +49,9 @@ DB_PORT=1688
 DB_NAME=yashandb
 DB_USER=your_username
 DB_PASSWORD=your_password
-MCP_AUTH_TOKEN=replace-with-a-long-random-token
 ```
 
-### 方式二：使用环境变量
+### 使用环境变量
 
 ```bash
 export DB_HOST=your_database_host
@@ -81,11 +59,10 @@ export DB_PORT=1688
 export DB_NAME=yashandb
 export DB_USER=your_username
 export DB_PASSWORD=your_password
-export MCP_AUTH_TOKEN=replace-with-a-long-random-token
 python yashan_mcp_server.py
 ```
 
-### 方式三：使用完整的 JDBC URL
+### 使用完整的 JDBC URL
 
 如果你的数据库有特殊的连接参数，可以直接设置完整的 JDBC URL：
 
@@ -93,246 +70,48 @@ python yashan_mcp_server.py
 export DB_JDBC_URL="jdbc:yasdb://host:port/dbname?param=value"
 ```
 
-### JVM 配置
-
-JVM 路径会自动检测，也可以手动指定：
-
-| 系统 | 示例路径 |
-|------|---------|
-| macOS | `/Library/Java/JavaVirtualMachines/jdk-17/Contents/Home/lib/server/libjvm.dylib` |
-| Linux | `/usr/lib/jvm/java-17-openjdk/lib/server/libjvm.so` |
-| Windows | `C:\Program Files\Java\jdk-17\bin\server\jvm.dll` |
+## 运行
 
 ```bash
-export JVM_LIB=/path/to/libjvm.so
-```
-
-| 系统 | 示例路径 |
-|------|---------|
-| macOS | `/Library/Java/JavaVirtualMachines/jdk-17/Contents/Home/lib/server/libjvm.dylib` |
-| Linux | `/usr/lib/jvm/java-17-openjdk/lib/server/libjvm.so` |
-| Windows | `C:\Program Files\Java\jdk-17\bin\server\jvm.dll` |
-
-## 使用
-
-### 启动 MCP 服务
-
-```bash
-python yashan_mcp_server.py --mode http --host 0.0.0.0 --port 8080
-```
-
-默认模式就是 `http`，上面的命令会在局域网暴露 MCP 服务。
-
-可直接用于局域网部署的启动命令：
-
-```bash
-export DB_HOST=your_database_host
-export DB_PORT=1688
-export DB_NAME=yashandb
-export DB_USER=your_username
-export DB_PASSWORD=your_password
-export MCP_AUTH_TOKEN='replace-with-a-long-random-token'
 python yashan_mcp_server.py --host 0.0.0.0 --port 8080
 ```
 
-启动后可先验证健康检查：
+### 端点
 
-```bash
-curl http://127.0.0.1:8080/healthz
-```
+- **SSE 端点**: `http://localhost:8080/sse`
+- **消息端点**: `http://localhost:8080/messages`
+- **健康检查**: `http://localhost:8080/healthz`
 
-### 局域网 HTTP 接入
+## MCP 工具能力
 
-- MCP 地址：`http://<server-ip>:8080/mcp`
-- 健康检查：`http://<server-ip>:8080/healthz`
-- 鉴权方式：`Authorization: Bearer <MCP_AUTH_TOKEN>`
-
-示例：
-
-```bash
-curl http://127.0.0.1:8080/healthz
-```
-
-`/mcp` 是 MCP 协议入口，应该由 MCP 客户端访问；直接用 `curl` 访问通常会得到协议层错误响应，这是正常现象。
-
-### Claude Desktop 配置
-
-适用于本机 `stdio` 集成，不适用于远程 HTTP 接入。
-
-编辑 `~/.claude.json`：
-
-```json
-{
-  "mcpServers": {
-    "yashan-db": {
-      "command": "python3",
-      "args": ["/path/to/yashan_mcp_server.py"]
-    }
-  }
-}
-```
-
-### Cursor 配置
-
-适用于本机 `stdio` 集成，不适用于远程 HTTP 接入。
-
-编辑 `~/.cursor/mcp.json`：
-
-```json
-{
-  "mcpServers": {
-    "yashan-db": {
-      "command": "python3",
-      "args": ["/path/to/yashan_mcp_server.py"]
-    }
-  }
-}
-```
-
-## 可用工具
-
-| 工具 | 说明 | 参数 |
-|------|------|------|
+| 工具名 | 描述 | 参数 |
+|--------|------|------|
 | `test_connection` | 测试数据库连接 | - |
-| `run_sql` | 执行 SQL 查询 | `sql_query`, `max_rows` |
-| `list_schemas` | 列出所有 Schema | - |
-| `list_tables` | 列出表 | `schema` (可选) |
-| `search_tables` | 搜索表名 | `pattern`, `schema` (可选) |
-| `describe_table` | 查看表结构 | `table_name`, `schema` (可选) |
-| `get_table_indexes` | 查看表索引 | `table_name`, `schema` (可选) |
-| `get_table_count` | 获取表行数 | `table_name`, `schema` (可选) |
+| `run_sql` | 执行 SQL 查询 | `sql_query`: SQL语句<br>`max_rows`: 最大返回行数 |
+| `list_schemas` | 列出所有 Schema（用户） | - |
+| `list_tables` | 列出表 | `schema`: 可选，指定 Schema 名 |
+| `describe_table` | 查看表结构 | `table_name`: 表名<br>`schema`: 可选，指定 Schema |
+| `search_tables` | 搜索表 | `pattern`: 表名关键字<br>`schema`: 可选，限定 Schema |
+| `get_table_indexes` | 查看表索引 | `table_name`: 表名<br>`schema`: 可选，指定 Schema |
+| `get_table_count` | 快速获取表行数 | `table_name`: 表名<br>`schema`: 可选，指定 Schema |
 | `get_database_info` | 获取数据库信息 | - |
-| `explain_sql` | 获取 SQL 执行计划 | `sql_query` |
+| `explain_sql` | 获取 SQL 执行计划 | `sql_query`: SQL语句 |
 
-## 使用示例
+## 与 Claude Desktop 集成
 
-### 查看表结构
+在 `claude_desktop_config.json` 中添加：
 
+```json
+{
+  "mcpServers": {
+    "yashan": {
+      "command": "python",
+      "args": ["/path/to/yashan_mcp_server.py"]
+    }
+  }
+}
 ```
-用户：查看 CUS_DEVICE 表的结构
-AI：调用 describe_table("CUS_DEVICE")
-```
-
-### 搜索表
-
-```
-用户：搜索包含 ORDER 的表
-AI：调用 search_tables("ORDER")
-```
-
-### 执行查询
-
-```
-用户：查询 CUS_DEVICE 表有多少条数据
-AI：调用 get_table_count("CUS_DEVICE")
-```
-
-## 运行模式
-
-### HTTP 模式（默认，推荐用于局域网部署）
-
-```bash
-python yashan_mcp_server.py --host 0.0.0.0 --port 8080
-```
-
-MCP endpoint 固定为：
-
-```text
-http://<server-ip>:8080/mcp
-```
-
-健康检查：
-
-```text
-http://<server-ip>:8080/healthz
-```
-
-如果启用了 `MCP_AUTH_TOKEN`，客户端必须携带：
-
-```text
-Authorization: Bearer <token>
-```
-
-### stdio 模式
-
-适用于命令行和本地集成：
-
-```bash
-python yashan_mcp_server.py --mode stdio
-```
-
-### SSE 模式（推荐用于 IDE 集成）
-
-适用于 Trae、Cursor 等 IDE：
-
-```bash
-python yashan_mcp_server.py --mode sse --port 8080
-```
-
-SSE 入口为 `http://<server-ip>:8080/sse`，消息入口为 `http://<server-ip>:8080/messages/`。
-
-## 日志
-
-日志文件位于：`yashan_mcp.log`
-
-日志级别可通过环境变量 `LOG_LEVEL` 设置：
-- `DEBUG` - 调试信息
-- `INFO` - 一般信息（默认）
-- `WARNING` - 警告信息
-- `ERROR` - 错误信息
-
-`stdio` 模式下日志会输出到 `stderr`，避免污染 MCP 的 JSON-RPC 数据流。
-
-## 常见问题
-
-### Q: 连接失败，提示 "JVM DLL not found"
-
-确保正确配置了 `jvm_lib` 路径，指向 `libjvm.so`（Linux）或 `libjvm.dylib`（macOS）。
-
-### Q: 表不在当前用户下
-
-使用 `schema` 参数指定表所属的用户：
-```python
-describe_table("TABLE_NAME", "SCHEMA_NAME")
-```
-
-### Q: 如何查看所有可用的 Schema？
-
-使用 `list_schemas()` 工具查看所有可用的 Schema。
-
-### Q: 如何查看 SQL 执行计划？
-
-使用 `explain_sql()` 工具：
-```python
-explain_sql("SELECT * FROM employees WHERE salary > 10000")
-```
-
-### Q: 局域网 HTTP 客户端应该连哪个地址？
-
-使用 `http://<server-ip>:<port>/mcp`，不要连接根路径 `/`。
-
-### Q: 如何做存活探测？
-
-访问 `http://<server-ip>:<port>/healthz`，返回 `{"ok": true, ...}` 即表示服务进程可用。
-
-## 开发
-
-```bash
-# 克隆仓库
-git clone https://github.com/yourusername/yashandb-mcp.git
-cd yashandb-mcp
-
-# 安装依赖
-pip install -r requirements.txt
-
-# 运行测试
-python test_jdbc.py
-```
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
 
 ## 许可证
 
-MIT License - 详见 [LICENSE](LICENSE) 文件
+MIT License
