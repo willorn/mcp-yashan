@@ -156,6 +156,9 @@ async def mcp_endpoint(request: Request):
     try:
         body = await request.json()
         response = await process_mcp_request(body)
+        # 对于通知类型的请求（如 notifications/initialized），返回空响应
+        if response is None:
+            return Response(status_code=202)
         return JSONResponse(response)
 
     except json.JSONDecodeError as e:
@@ -205,6 +208,10 @@ async def process_mcp_request(body: Dict[str, Any]) -> Dict[str, Any]:
                 "version": "2.1.0"
             }
         }
+    elif method == "notifications/initialized":
+        # 客户端初始化完成通知，无需返回结果
+        logger.info("Client initialized notification received")
+        return None
     elif method == "tools/list":
         result = {"tools": TOOLS}
     elif method == "tools/call":
