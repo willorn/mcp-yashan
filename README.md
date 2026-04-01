@@ -73,14 +73,18 @@ export DB_JDBC_URL="jdbc:yasdb://host:port/dbname?param=value"
 ## 运行
 
 ```bash
-python yashan_mcp_server.py --host 0.0.0.0 --port 8080
+python server.py --host 0.0.0.0 --port 20302
 ```
 
 ### 端点
 
-- **SSE 端点**: `http://localhost:8080/sse`
-- **消息端点**: `http://localhost:8080/messages`
-- **健康检查**: `http://localhost:8080/healthz`
+- **MCP 端点**: `http://localhost:20302/mcp` (推荐)
+- **SSE 端点**: `http://localhost:20302/sse` (兼容)
+- **健康检查**: `http://localhost:20302/healthz`
+
+### Windows 开机自动启动
+
+详见 [docs/WINDOWS_AUTOSTART.md](./docs/WINDOWS_AUTOSTART.md)
 
 ## MCP 工具能力
 
