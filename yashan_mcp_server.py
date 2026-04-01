@@ -780,6 +780,10 @@ async def messages_endpoint(request: Request):
                     "capabilities": {"tools": {}},
                     "serverInfo": {"name": "yashan-mcp-sse", "version": "2.0.0"}
                 }
+            elif method == "notifications/initialized":
+                # MCP 通知：客户端已初始化完成，无需响应
+                logger.debug("收到 notifications/initialized 通知")
+                return JSONResponse({"status": "ok"})
             elif method == "tools/list":
                 result = {"tools": TOOLS}
             elif method == "tools/call":
