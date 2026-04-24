@@ -24,8 +24,15 @@ def main():
         print(f"❌ JDBC 驱动文件不存在: {jdbc_driver}")
         return
 
-    # 使用 GraalVM 的 libjvm.dylib 完整路径
-    jvm_lib = "/Users/tianyi/Library/Java/JavaVirtualMachines/graalvm-jdk-21.0.7/Contents/Home/lib/server/libjvm.dylib"
+    jvm_candidates = [
+        project_root / "runtime" / "jre" / "lib" / "server" / "libjvm.dylib",
+        project_root / "runtime" / "jre" / "lib" / "server" / "libjvm.so",
+        project_root / "runtime" / "jre" / "bin" / "server" / "jvm.dll",
+    ]
+    jvm_lib = next((path for path in jvm_candidates if path.exists()), None)
+    if jvm_lib is None:
+        print("❌ 未找到内置 JVM，请先准备 runtime/jre")
+        return
 
     # ===== 请修改以下数据库连接信息 =====
     DB_HOST = "your_host"
@@ -45,7 +52,7 @@ def main():
         # 先启动 JVM
         if not jpype.isJVMStarted():
             jpype.startJVM(
-                jvm_lib,
+                os.fspath(jvm_lib),
                 "-Djava.class.path=" + os.fspath(jdbc_driver),
                 ignoreUnrecognized=True
             )

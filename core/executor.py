@@ -1,78 +1,39 @@
 # -*- coding: utf-8 -*-
 """
 Java SQL 执行器 - 跨平台实现
-使用 Java 子进程调用 JDBC 驱动
+优先使用仓库内置的 Java Runtime，不依赖用户机器上的系统 Java。
 """
 
-import json
-import subprocess
-import os
-import sys
+import base64
 import logging
-from typing import Dict, Any, Optional
+import os
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger("yashan_mcp")
 
-# Java SQL 执行器模板
-JAVA_TEMPLATE = '''
-import java.sql.*;
-public class TempSqlExecutor {{
-    public static void main(String[] args) throws Exception {{
-        String jdbcUrl = "{jdbc_url}";
-        String user = "{username}";
-        String password = "{password}";
-        String sql = args[0];
-        int maxRows = Integer.parseInt(args[1]);
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_JDBC_JAR = "yashandb-jdbc-1.9.3.jar"
+HELPER_CLASS = "io.yashan.mcp.SqlExecutorMain"
+HELPER_JAR = PROJECT_ROOT / "runtime" / "java" / "yashan-mcp-helper.jar"
 
-        long startTime = System.currentTimeMillis();
 
-        try {{
-            Class.forName("com.yashandb.jdbc.Driver");
-            Connection conn = DriverManager.getConnection(jdbcUrl, user, password);
-            Statement stmt = conn.createStatement();
-            stmt.setMaxRows(maxRows);
-            boolean isResultSet = stmt.execute(sql);
+def _load_env_file() -> None:
+    """从项目根目录加载 .env，避免只有 server.py 才能初始化配置。"""
+    env_file = PROJECT_ROOT / ".env"
+    if not env_file.exists():
+        return
 
-            if (isResultSet) {{
-                ResultSet rs = stmt.getResultSet();
-                ResultSetMetaData metaData = rs.getMetaData();
-                int columnCount = metaData.getColumnCount();
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip())
 
-                System.out.println("COLUMNS:" + columnCount);
-                for (int i = 1; i <= columnCount; i++) {{
-                    System.out.println("COL:" + metaData.getColumnName(i));
-                }}
 
-                int rowCount = 0;
-                while (rs.next() && rowCount < maxRows) {{
-                    System.out.print("ROW:");
-                    for (int i = 1; i <= columnCount; i++) {{
-                        if (i > 1) System.out.print("|");
-                        Object value = rs.getObject(i);
-                        System.out.print(value != null ? value.toString().replace("\\n", " ").replace("\\r", " ").replace("\\t", " ") : "NULL");
-                    }}
-                    System.out.println();
-                    rowCount++;
-                }}
-                System.out.println("ROW_COUNT:" + rowCount);
-                rs.close();
-            }} else {{
-                int updateCount = stmt.getUpdateCount();
-                System.out.println("UPDATE_COUNT:" + updateCount);
-            }}
-
-            stmt.close();
-            conn.close();
-            System.out.println("SUCCESS:true");
-        }} catch (Exception e) {{
-            System.out.println("SUCCESS:false");
-            System.out.println("ERROR:" + e.getMessage());
-        }}
-
-        System.out.println("EXEC_TIME:" + (System.currentTimeMillis() - startTime));
-    }}
-}}
-'''
+_load_env_file()
 
 
 class JavaSqlExecutor:
@@ -97,85 +58,102 @@ class JavaSqlExecutor:
             "username": os.getenv("DB_USER", ""),
             "password": os.getenv("DB_PASSWORD", ""),
         }
-        self.jdbc_url = os.getenv("DB_JDBC_URL",
-            f"jdbc:yasdb://{self.config['host']}:{self.config['port']}/{self.config['db_name']}?failover=on")
-        self.jar_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "yashandb-jdbc-1.9.3.jar")
+        self.jdbc_url = os.getenv(
+            "DB_JDBC_URL",
+            f"jdbc:yasdb://{self.config['host']}:{self.config['port']}/{self.config['db_name']}?failover=on"
+        )
+        self.jar_path = PROJECT_ROOT / os.getenv("YASHAN_JDBC_JAR", DEFAULT_JDBC_JAR)
+        self.helper_jar_path = Path(os.getenv("YASHAN_HELPER_JAR", str(HELPER_JAR)))
         self.java_cmd = self._find_java()
         self._initialized = True
 
     def _find_java(self) -> str:
-        """查找 Java 可执行文件（跨平台）"""
+        """优先查找仓库内置 Java，其次回退到环境变量和 PATH。"""
+        candidates = []
+
+        bundled_home = os.getenv("YASHAN_JAVA_HOME")
+        if bundled_home:
+            candidates.append(Path(bundled_home))
+
+        candidates.extend(
+            [
+                PROJECT_ROOT / "runtime" / "jre",
+                PROJECT_ROOT / "runtime" / "java" / "jre",
+            ]
+        )
+
         java_home = os.getenv("JAVA_HOME")
         if java_home:
-            java_exe = os.path.join(java_home, "bin", "java.exe")
-            if os.path.exists(java_exe):
-                return java_exe
-            java_exe = os.path.join(java_home, "bin", "java")
-            if os.path.exists(java_exe):
-                return java_exe
-        return "java"
+            candidates.append(Path(java_home))
+
+        for home in candidates:
+            java_cmd = self._java_from_home(home)
+            if java_cmd:
+                return java_cmd
+
+        java_on_path = shutil.which("java")
+        if java_on_path:
+            return java_on_path
+
+        raise FileNotFoundError(
+            "未找到可用的 Java 运行时。请确保仓库内存在 runtime/jre，"
+            "或设置 YASHAN_JAVA_HOME / JAVA_HOME。"
+        )
+
+    @staticmethod
+    def _java_from_home(java_home: Path) -> Optional[str]:
+        if not java_home:
+            return None
+
+        for executable in ("java.exe", "java"):
+            java_cmd = java_home / "bin" / executable
+            if java_cmd.exists():
+                return str(java_cmd)
+        return None
 
     def execute(self, sql: str, max_rows: int = 1000) -> Dict[str, Any]:
         """执行 SQL"""
-        temp_dir = os.path.dirname(os.path.dirname(__file__))
-        temp_java = os.path.join(temp_dir, "TempSqlExecutor.java")
-        temp_class = os.path.join(temp_dir, "TempSqlExecutor.class")
+        if not self.jar_path.exists():
+            return {"success": False, "error": f"JDBC 驱动不存在: {self.jar_path}"}
 
-        safe_jdbc_url = self.jdbc_url.replace("\\", "\\\\")
-        safe_username = self.config['username'].replace("\\", "\\\\")
-        safe_password = self.config['password'].replace("\\", "\\\\")
+        if not self.helper_jar_path.exists():
+            return {"success": False, "error": f"Java helper 不存在: {self.helper_jar_path}"}
 
-        java_code = JAVA_TEMPLATE.format(
-            jdbc_url=safe_jdbc_url,
-            username=safe_username,
-            password=safe_password
-        )
+        classpath_sep = ";" if os.name == "nt" else ":"
+        classpath = f"{self.jar_path}{classpath_sep}{self.helper_jar_path}"
 
         try:
-            with open(temp_java, "w", encoding="utf-8") as f:
-                f.write(java_code)
-
-            javac_cmd = self._get_javac_cmd()
-            compile_result = subprocess.run(
-                [javac_cmd, "-cp", self.jar_path, temp_java],
-                capture_output=True, timeout=30, cwd=temp_dir
+            result = subprocess.run(
+                [
+                    self.java_cmd,
+                    "-cp",
+                    classpath,
+                    HELPER_CLASS,
+                    sql,
+                    str(max_rows),
+                    self.jdbc_url,
+                    self.config["username"],
+                    self.config["password"],
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=PROJECT_ROOT,
             )
 
-            if compile_result.returncode != 0:
+            if result.returncode != 0 and not result.stdout:
                 return {
                     "success": False,
-                    "error": f"编译失败: {compile_result.stderr.decode('utf-8', errors='ignore')}"
+                    "error": result.stderr.strip() or f"Java 进程退出码: {result.returncode}",
                 }
 
-            classpath_sep = ";" if os.name == "nt" else ":"
-            result = subprocess.run(
-                [self.java_cmd, "-cp", f"{self.jar_path}{classpath_sep}{temp_dir}", "TempSqlExecutor", sql, str(max_rows)],
-                capture_output=True, text=True, timeout=60, cwd=temp_dir
-            )
-
-            return self._parse_output(result.stdout)
+            return self._parse_output(result.stdout, result.stderr)
 
         except Exception as e:
-            logger.error(f"SQL 执行错误: {e}")
+            logger.error("SQL 执行错误: %s", e)
             return {"success": False, "error": str(e)}
-        finally:
-            for f in [temp_java, temp_class]:
-                try:
-                    if os.path.exists(f):
-                        os.remove(f)
-                except:
-                    pass
 
-    def _get_javac_cmd(self) -> str:
-        """获取 javac 命令"""
-        javac_cmd = self.java_cmd.replace("java.exe", "javac.exe").replace("java", "javac")
-        if javac_cmd == "javac":
-            return "javac"
-        if os.path.exists(javac_cmd):
-            return javac_cmd
-        return "javac"
-
-    def _parse_output(self, output: str) -> Dict[str, Any]:
+    def _parse_output(self, output: str, stderr: str = "") -> Dict[str, Any]:
         """解析 Java 输出"""
         result = {
             "success": False,
@@ -183,35 +161,40 @@ class JavaSqlExecutor:
             "data": [],
             "row_count": 0,
             "execution_time": 0,
-            "error": None
+            "error": None,
         }
 
-        for line in output.strip().split("\n"):
-            line = line.strip()
+        for raw_line in output.strip().splitlines():
+            line = raw_line.strip()
             if line.startswith("SUCCESS:"):
-                result["success"] = line.split(":")[1].lower() == "true"
+                result["success"] = line.split(":", 1)[1].lower() == "true"
             elif line.startswith("ERROR:"):
                 result["error"] = line[6:]
-            elif line.startswith("COLUMNS:"):
-                pass
             elif line.startswith("COL:"):
                 result["columns"].append(line[4:])
-            elif line.startswith("ROW:"):
-                row_data = line[4:].split("|")
+            elif line.startswith("ROW_B64:"):
+                row_data = line[8:].split("|")
                 row_dict = {}
                 for i, col in enumerate(result["columns"]):
-                    if i < len(row_data):
-                        row_dict[col] = None if row_data[i] == "NULL" else row_data[i]
+                    if i >= len(row_data):
+                        continue
+                    encoded_value = row_data[i]
+                    if encoded_value == "NULL":
+                        row_dict[col] = None
+                    else:
+                        row_dict[col] = base64.b64decode(encoded_value).decode("utf-8")
                 result["data"].append(row_dict)
             elif line.startswith("ROW_COUNT:") or line.startswith("UPDATE_COUNT:"):
-                result["row_count"] = int(line.split(":")[1])
+                result["row_count"] = int(line.split(":", 1)[1])
             elif line.startswith("EXEC_TIME:"):
-                result["execution_time"] = float(line.split(":")[1]) / 1000.0
+                result["execution_time"] = float(line.split(":", 1)[1]) / 1000.0
+
+        if not result["success"] and not result["error"] and stderr.strip():
+            result["error"] = stderr.strip()
 
         return result
 
 
-# 全局单例
 _executor = None
 
 

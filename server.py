@@ -27,6 +27,7 @@ import os
 import sys
 import logging
 import asyncio
+import socket
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -49,6 +50,33 @@ def _load_env_file():
                     os.environ.setdefault(key.strip(), value.strip())
 
 _load_env_file()
+
+
+def _get_local_ip_addresses() -> list[str]:
+    """尽量找出局域网可访问 IP，便于其他机器接入 MCP。"""
+    candidates = set()
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            candidates.add(sock.getsockname()[0])
+    except OSError:
+        pass
+
+    try:
+        hostname = socket.gethostname()
+        for family, _, _, _, sockaddr in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            if family == socket.AF_INET:
+                candidates.add(sockaddr[0])
+    except OSError:
+        pass
+
+    filtered = []
+    for ip in sorted(candidates):
+        if ip.startswith("127."):
+            continue
+        filtered.append(ip)
+    return filtered
 
 # 日志配置
 class DailyFileHandler(logging.Handler):
@@ -350,9 +378,33 @@ if __name__ == "__main__":
     get_executor()
 
     config = get_executor().config
+    local_ips = _get_local_ip_addresses()
     logger.info(f"数据库：{config['host']}:{config['port']}/{config['db_name']}")
     logger.info(f"旧版 SSE 端点：http://{args.host}:{args.port}/sse")
     logger.info(f"新版 MCP 端点：http://{args.host}:{args.port}/mcp")
     logger.info(f"健康检查：http://{args.host}:{args.port}/healthz")
+
+    if local_ips:
+        logger.info("局域网可访问地址：")
+        for ip in local_ips:
+            logger.info(f"  MCP: http://{ip}:{args.port}/mcp")
+            logger.info(f"  SSE: http://{ip}:{args.port}/sse")
+        sample_ip = local_ips[0]
+        logger.info("远端机器可参考以下 HTTP MCP 配置：")
+        logger.info(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "yashan": {
+                            "type": "streamable-http",
+                            "url": f"http://{sample_ip}:{args.port}/mcp",
+                        }
+                    }
+                },
+                ensure_ascii=False,
+            )
+        )
+    else:
+        logger.info("未检测到局域网 IP，可使用本机地址 localhost 访问。")
 
     uvicorn.run(app, host=args.host, port=args.port, forwarded_allow_ips="*")

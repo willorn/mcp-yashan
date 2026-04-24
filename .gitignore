@@ -5,6 +5,8 @@ __pycache__/
 *.so
 .Python
 build/
+!runtime/
+runtime/jre
 develop-eggs/
 dist/
 downloads/
@@ -37,6 +39,7 @@ env/
 # Logs
 *.log
 logs/
+release/
 
 # Local config (contains sensitive info)
 config_local.py
