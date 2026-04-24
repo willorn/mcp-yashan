@@ -52,7 +52,7 @@ _load_env_file()
 
 # 日志配置
 class DailyFileHandler(logging.Handler):
-    """按天切换日志文件，日志统一写入 log/ 目录。"""
+    """按天切换日志文件，日志统一写入 logs/ 目录。"""
 
     def __init__(self, log_dir: str, filename_prefix: str, encoding: str = "utf-8"):
         super().__init__()
@@ -109,7 +109,7 @@ class DailyFileHandler(logging.Handler):
 logger = logging.getLogger("yashan_mcp")
 project_root = os.path.dirname(__file__)
 daily_log_handler = DailyFileHandler(
-    os.path.join(project_root, "log"),
+    os.path.join(project_root, "logs"),
     "yashan_mcp",
 )
 logging.basicConfig(

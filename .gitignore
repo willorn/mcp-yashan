@@ -36,7 +36,6 @@ env/
 
 # Logs
 *.log
-log/
 logs/
 
 # Local config (contains sensitive info)
