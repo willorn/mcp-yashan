@@ -59,7 +59,7 @@ export DB_PORT=1688
 export DB_NAME=yashandb
 export DB_USER=your_username
 export DB_PASSWORD=your_password
-python yashan_mcp_server.py
+python server.py --host 0.0.0.0 --port 20302
 ```
 
 ### 使用完整的 JDBC URL
@@ -110,7 +110,7 @@ python server.py --host 0.0.0.0 --port 20302
   "mcpServers": {
     "yashan": {
       "command": "python",
-      "args": ["/path/to/yashan_mcp_server.py"]
+      "args": ["/path/to/server.py", "--host", "0.0.0.0", "--port", "20302"]
     }
   }
 }
