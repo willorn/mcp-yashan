@@ -20,7 +20,7 @@
 - Python 3.10+
 - Java 17+（JDK，需要 javac 和 java 命令）
 - 崖山数据库或其他兼容数据库
-- 崖山 JDBC 驱动（`yashandb-jdbc-1.7.19-21.jar`）
+- 崖山 JDBC 驱动（`yashandb-jdbc-1.9.3.jar`）
 
 ## 支持的数据库
 

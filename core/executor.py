@@ -99,7 +99,7 @@ class JavaSqlExecutor:
         }
         self.jdbc_url = os.getenv("DB_JDBC_URL",
             f"jdbc:yasdb://{self.config['host']}:{self.config['port']}/{self.config['db_name']}?failover=on")
-        self.jar_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "yashandb-jdbc-1.7.19-21.jar")
+        self.jar_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "yashandb-jdbc-1.9.3.jar")
         self.java_cmd = self._find_java()
         self._initialized = True
 
