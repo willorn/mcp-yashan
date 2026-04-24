@@ -27,6 +27,7 @@ import os
 import sys
 import logging
 import asyncio
+from datetime import datetime
 from typing import Dict, Any, Optional
 
 from starlette.applications import Starlette
@@ -50,16 +51,73 @@ def _load_env_file():
 _load_env_file()
 
 # 日志配置
+class DailyFileHandler(logging.Handler):
+    """按天切换日志文件，日志统一写入 log/ 目录。"""
+
+    def __init__(self, log_dir: str, filename_prefix: str, encoding: str = "utf-8"):
+        super().__init__()
+        self.log_dir = log_dir
+        self.filename_prefix = filename_prefix
+        self.encoding = encoding
+        self._current_date = ""
+        self._file_handler: Optional[logging.FileHandler] = None
+        os.makedirs(self.log_dir, exist_ok=True)
+
+    def _get_log_path(self) -> tuple[str, str]:
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        log_path = os.path.join(self.log_dir, f"{self.filename_prefix}_{current_date}.log")
+        return current_date, log_path
+
+    def _ensure_handler(self) -> None:
+        current_date, log_path = self._get_log_path()
+        if self._file_handler and self._current_date == current_date:
+            return
+
+        if self._file_handler:
+            self._file_handler.close()
+
+        self._current_date = current_date
+        self._file_handler = logging.FileHandler(log_path, encoding=self.encoding)
+        if self.formatter:
+            self._file_handler.setFormatter(self.formatter)
+
+    def setFormatter(self, fmt: logging.Formatter) -> None:
+        super().setFormatter(fmt)
+        if self._file_handler:
+            self._file_handler.setFormatter(fmt)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self.acquire()
+            self._ensure_handler()
+            if self._file_handler:
+                self._file_handler.emit(record)
+        finally:
+            self.release()
+
+    def close(self) -> None:
+        try:
+            self.acquire()
+            if self._file_handler:
+                self._file_handler.close()
+                self._file_handler = None
+        finally:
+            self.release()
+            super().close()
+
+
 logger = logging.getLogger("yashan_mcp")
+project_root = os.path.dirname(__file__)
+daily_log_handler = DailyFileHandler(
+    os.path.join(project_root, "log"),
+    "yashan_mcp",
+)
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stderr),
-        logging.FileHandler(
-            os.path.join(os.path.dirname(__file__), 'yashan_mcp.log'),
-            encoding='utf-8'
-        )
+        daily_log_handler,
     ]
 )
 

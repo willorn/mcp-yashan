@@ -81,6 +81,7 @@ python server.py --host 0.0.0.0 --port 20302
 - **MCP 端点**: `http://localhost:20302/mcp` (推荐)
 - **SSE 端点**: `http://localhost:20302/sse` (兼容)
 - **健康检查**: `http://localhost:20302/healthz`
+- **日志目录**: `log/yashan_mcp_YYYY-MM-DD.log`（按天追加）
 
 ### Windows 开机自动启动
 
