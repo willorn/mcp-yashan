@@ -90,15 +90,36 @@ mcp-yashan/
 ## 前置要求
 
 - Python 3.10+
+- **Java 8+ (JDK 或 JRE)**
 - 崖山数据库或其他兼容数据库
-- JDBC 驱动：`yashandb-jdbc-1.9.3.jar`
-- 内置 Java Runtime：`runtime/jre/`
+- JDBC 驱动：`yashandb-jdbc-1.9.3.jar`（已包含在 `runtime/` 目录）
+
+### Java 安装
+
+项目需要 Java 运行时环境（JRE 8+）来执行 SQL 查询。
+
+**检查 Java 版本**：
+```bash
+java -version
+# 需要显示 1.8 或更高版本
+```
+
+**如果未安装 Java**：
+
+- **macOS**: `brew install openjdk@17`
+- **Ubuntu/Debian**: `sudo apt install openjdk-17-jre`
+- **CentOS/RHEL**: `sudo yum install java-17-openjdk`
+- **Windows**: 从 [Oracle](https://www.oracle.com/java/technologies/downloads/) 或 [OpenJDK](https://adoptium.net/) 下载安装
+
+**注意**：项目会自动查找系统 Java，无需额外配置。
 
 ## 安装
 
 ```bash
 python3 -m pip install -r requirements.txt
 ```
+
+**注意**：确保已安装 Java 8+ (JRE 或 JDK)。检查：`java -version`
 
 ## 配置
 
@@ -142,6 +163,8 @@ python3 src/mcp_server.py
 # 或
 python3 src/http_server.py --host 0.0.0.0 --port 20302
 ```
+
+**注意**：首次运行前请确保已安装 Java 并配置 `.env` 文件。
 
 ## 集成到 AI 工具
 

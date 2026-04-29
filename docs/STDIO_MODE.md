@@ -23,7 +23,41 @@ STDIO 模式是**推荐的默认使用方式**，适合本地开发和 AI 工具
 
 ---
 
-## 快速开始
+## 前置要求
+
+### 必需
+
+- **Python 3.10+**
+- **Java 8+ (JRE 或 JDK)**
+- 崖山数据库访问权限
+
+### Java 安装
+
+STDIO 模式需要 Java 运行时来执行 SQL 查询。
+
+**检查是否已安装**：
+```bash
+java -version
+```
+
+应该显示版本 1.8 或更高（如 `java version "17.0.1"`）。
+
+**安装 Java**（如果未安装）：
+
+| 系统 | 命令 |
+|------|------|
+| macOS | `brew install openjdk@17` |
+| Ubuntu/Debian | `sudo apt install openjdk-17-jre` |
+| CentOS/RHEL | `sudo yum install java-17-openjdk` |
+| Windows | 下载 [OpenJDK](https://adoptium.net/) 安装 |
+
+**验证安装**：
+```bash
+java -version
+# 输出示例：openjdk version "17.0.1"
+```
+
+---
 
 ### 1. 配置数据库连接
 
@@ -41,7 +75,23 @@ DB_USER=your_username
 DB_PASSWORD=your_password
 ```
 
-### 2. 测试运行
+### 2. 配置数据库连接
+
+```bash
+cp config/.env.example .env
+```
+
+编辑 `.env`：
+
+```env
+DB_HOST=localhost
+DB_PORT=1688
+DB_NAME=yashandb
+DB_USER=your_username
+DB_PASSWORD=your_password
+```
+
+### 3. 测试运行
 
 ```bash
 python3 mcp_server.py
@@ -247,8 +297,15 @@ export YASHAN_JDBC_JAR=/path/to/yashandb-jdbc-1.9.3.jar
 
 **解决**：
 ```bash
-# 使用内置 JRE（推荐）
-ls runtime/jre/bin/java
+# 检查 Java 是否安装
+java -version
+
+# 如果未安装，安装 Java
+# macOS
+brew install openjdk@17
+
+# Ubuntu/Debian
+sudo apt install openjdk-17-jre
 
 # 或设置 JAVA_HOME
 export JAVA_HOME=/path/to/jdk

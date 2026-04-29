@@ -5,8 +5,6 @@ __pycache__/
 *.so
 .Python
 build/
-!runtime/
-runtime/jre
 develop-eggs/
 dist/
 downloads/
@@ -39,7 +37,10 @@ env/
 # Logs
 *.log
 logs/
+
+# Build artifacts
 release/
+runtime/jre/
 
 # Local config (contains sensitive info)
 config_local.py
@@ -64,8 +65,5 @@ htmlcov/
 # Claude/Cursor config
 .claude-desktop/
 .cursor/
-
-# JDBC Driver (download separately from https://www.yashandb.com/download)
-# yashandb-jdbc-*.jar
-# *.jar
-.kiro
+.kiro/
+.claude/

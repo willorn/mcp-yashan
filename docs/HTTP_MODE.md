@@ -25,7 +25,23 @@ HTTP 模式提供常驻的 HTTP 服务，适合远程访问和多用户场景。
 
 ## 快速开始
 
-### 1. 配置数据库连接
+### 1. 安装 Java（如果未安装）
+
+```bash
+# 检查 Java 版本（需要 1.8+）
+java -version
+
+# macOS
+brew install openjdk@17
+
+# Ubuntu/Debian
+sudo apt install openjdk-17-jre
+
+# CentOS/RHEL
+sudo yum install java-17-openjdk
+```
+
+### 2. 配置数据库连接
 
 ```bash
 cp .env.example .env
@@ -41,7 +57,23 @@ DB_USER=your_username
 DB_PASSWORD=your_password
 ```
 
-### 2. 启动服务
+### 2. 配置数据库连接
+
+```bash
+cp config/.env.example .env
+```
+
+编辑 `.env`：
+
+```env
+DB_HOST=localhost
+DB_PORT=1688
+DB_NAME=yashandb
+DB_USER=your_username
+DB_PASSWORD=your_password
+```
+
+### 3. 启动服务
 
 ```bash
 # 使用启动脚本（推荐）
@@ -51,7 +83,17 @@ DB_PASSWORD=your_password
 python3 server.py --host 0.0.0.0 --port 20302
 ```
 
-### 3. 验证服务
+### 3. 启动服务
+
+```bash
+# 使用启动脚本（推荐）
+./scripts/start.sh
+
+# 或直接运行
+python3 src/http_server.py --host 0.0.0.0 --port 20302
+```
+
+### 4. 验证服务
 
 ```bash
 # 健康检查
