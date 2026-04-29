@@ -43,7 +43,41 @@ python3 server.py --host 0.0.0.0 --port 20302
 - SQL 参考：[docs/YASHAN_SQL_GUIDE.md](./docs/YASHAN_SQL_GUIDE.md)
 - Windows 开机启动：[docs/WINDOWS_AUTOSTART.md](./docs/WINDOWS_AUTOSTART.md)
 
-## 特性
+## 项目结构
+
+```
+mcp-yashan/
+├── src/                        # 源代码
+│   ├── mcp_server.py          # STDIO 模式入口
+│   ├── http_server.py         # HTTP 模式入口
+│   └── core/                  # 核心逻辑
+│       ├── executor.py        # SQL 执行器
+│       ├── metadata.py        # 元数据管理
+│       └── tools.py           # MCP 工具定义
+├── config/                     # 配置文件
+│   └── .env.example           # 配置模板
+├── scripts/                    # 脚本工具
+│   ├── start.sh               # HTTP 模式启动脚本
+│   ├── package_release.sh     # 打包脚本
+│   └── create_autostart_task.ps1
+├── tests/                      # 测试
+│   ├── test_stability.py      # 稳定性测试
+│   └── test_jdbc.py           # JDBC 连接测试
+├── runtime/                    # 运行时依赖
+│   ├── jre/                   # Java 运行时
+│   ├── java/                  # Java helper
+│   └── yashandb-jdbc-1.9.3.jar
+├── docs/                       # 文档
+│   ├── STDIO_MODE.md          # STDIO 模式文档
+│   ├── HTTP_MODE.md           # HTTP 模式文档
+│   ├── QUICK_START.md         # 快速开始
+│   └── YASHAN_SQL_GUIDE.md    # SQL 语法指南
+├── README.md                   # 项目说明
+├── requirements.txt            # Python 依赖
+└── LICENSE                     # MIT 许可证
+```
+
+---
 
 - 完整的数据库操作：支持查询、插入、更新、删除等 SQL 操作
 - MCP SSE / Streamable HTTP 协议支持
@@ -71,7 +105,7 @@ python3 -m pip install -r requirements.txt
 推荐使用 `.env`：
 
 ```bash
-cp .env.example .env
+cp config/.env.example .env
 ```
 
 然后填写：
@@ -98,15 +132,15 @@ DB_JDBC_URL=jdbc:yasdb://host:port/dbname?param=value
 ### STDIO 模式（推荐）
 
 ```bash
-python3 mcp_server.py
+python3 src/mcp_server.py
 ```
 
 ### HTTP 模式
 
 ```bash
-./start.sh
+./scripts/start.sh
 # 或
-python3 server.py --host 0.0.0.0 --port 20302
+python3 src/http_server.py --host 0.0.0.0 --port 20302
 ```
 
 ## 集成到 AI 工具
@@ -120,7 +154,7 @@ python3 server.py --host 0.0.0.0 --port 20302
   "mcpServers": {
     "yashan": {
       "command": "python3",
-      "args": ["<项目绝对路径>/mcp_server.py"]
+      "args": ["<项目绝对路径>/src/mcp_server.py"]
     }
   }
 }

@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from core import get_executor, TOOLS, handle_tool_call
 
 # 配置日志（只输出到 stderr，避免污染 stdout）
-log_dir = Path(__file__).parent / "logs"
+log_dir = Path(__file__).parent.parent / "logs"
 log_dir.mkdir(exist_ok=True)
 
 logging.basicConfig(

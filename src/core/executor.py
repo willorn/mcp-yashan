@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger("yashan_mcp")
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_JDBC_JAR = "yashandb-jdbc-1.9.3.jar"
 HELPER_CLASS = "io.yashan.mcp.SqlExecutorMain"
 HELPER_JAR = PROJECT_ROOT / "runtime" / "java" / "yashan-mcp-helper.jar"
@@ -62,7 +62,7 @@ class JavaSqlExecutor:
             "DB_JDBC_URL",
             f"jdbc:yasdb://{self.config['host']}:{self.config['port']}/{self.config['db_name']}?failover=on"
         )
-        self.jar_path = PROJECT_ROOT / os.getenv("YASHAN_JDBC_JAR", DEFAULT_JDBC_JAR)
+        self.jar_path = PROJECT_ROOT / "runtime" / os.getenv("YASHAN_JDBC_JAR", DEFAULT_JDBC_JAR)
         self.helper_jar_path = Path(os.getenv("YASHAN_HELPER_JAR", str(HELPER_JAR)))
         self.java_cmd = self._find_java()
         # 可配置的超时时间（秒），默认 60 秒

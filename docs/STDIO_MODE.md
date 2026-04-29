@@ -121,7 +121,7 @@ pwd
   "mcpServers": {
     "yashan": {
       "command": "python3",
-      "args": ["<项目绝对路径>/mcp_server.py"]
+      "args": ["<项目绝对路径>/src/mcp_server.py"]
     }
   }
 }

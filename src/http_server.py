@@ -41,7 +41,7 @@ from starlette.middleware.cors import CORSMiddleware
 # 加载环境变量
 def _load_env_file():
     """加载 .env 文件"""
-    env_file = os.path.join(os.path.dirname(__file__), ".env")
+    env_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
     if os.path.exists(env_file):
         with open(env_file, "r", encoding='utf-8') as f:
             for line in f:
@@ -183,7 +183,7 @@ class DailyFileHandler(logging.Handler):
 
 
 logger = logging.getLogger("yashan_mcp")
-project_root = os.path.dirname(__file__)
+project_root = os.path.dirname(os.path.dirname(__file__))
 daily_log_handler = DailyFileHandler(
     os.path.join(project_root, "logs"),
     "yashan_mcp",

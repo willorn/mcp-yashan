@@ -22,3 +22,13 @@
 ## No Backward Compatibility
 
 No backward compatibility unless explicitly requested. Break old formats freely. Prioritize clean architecture and high-quality code over minimizing changed lines.
+
+## 进度播报格式
+在执行命令、读写文件、测试页面、查看日志时，尽量输出简洁的中文进度块，格式如下：
+
+> 🧩 步骤：{一句话描述正在做什么}
+> 🎯 目的：{为什么要做}
+> ▶️ 执行：{命令、页面、文件路径或操作}
+> ✅ 结果：{当前状态}
+> 🧾 证据：{可验证证据路径}
+> 📝 备注：{可选；最多一句}
