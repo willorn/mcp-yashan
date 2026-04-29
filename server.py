@@ -28,6 +28,7 @@ import sys
 import logging
 import asyncio
 import socket
+import re
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -77,6 +78,53 @@ def _get_local_ip_addresses() -> list[str]:
             continue
         filtered.append(ip)
     return filtered
+
+
+def _sanitize_value(key: str, value: Any) -> Any:
+    """脱敏敏感字段，避免日志输出密码。"""
+    lowered_key = key.lower()
+    if any(token in lowered_key for token in ("password", "passwd", "pwd", "secret", "token")):
+        return "***"
+
+    if isinstance(value, str):
+        # 脱敏 URL 查询参数中的 password=xxx
+        value = re.sub(r"(?i)(password=)[^&]+", r"\1***", value)
+        # 脱敏类似 protocol://user:password@host 的密码片段
+        value = re.sub(r"(://[^:/@]+:)[^@]+@", r"\1***@", value)
+        return value
+
+    if isinstance(value, dict):
+        return {nested_key: _sanitize_value(nested_key, nested_value) for nested_key, nested_value in value.items()}
+
+    if isinstance(value, list):
+        return [_sanitize_value(key, item) for item in value]
+
+    return value
+
+
+def _build_runtime_config(args: Any, executor: Any) -> Dict[str, Any]:
+    """整理当前生效的运行配置，供启动日志输出。"""
+    config = executor.config
+    return {
+        "server": {
+            "host": args.host,
+            "port": args.port,
+            "hostname": socket.gethostname(),
+            "log_level": os.getenv("LOG_LEVEL", "INFO").upper(),
+        },
+        "database": {
+            "host": config["host"],
+            "port": config["port"],
+            "db_name": config["db_name"],
+            "username": config["username"],
+            "jdbc_url": executor.jdbc_url,
+        },
+        "runtime": {
+            "java_cmd": executor.java_cmd,
+            "jdbc_jar": str(executor.jar_path),
+            "helper_jar": str(executor.helper_jar_path),
+        },
+    }
 
 # 日志配置
 class DailyFileHandler(logging.Handler):
@@ -375,11 +423,16 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     logger.info("正在初始化...")
-    get_executor()
-
-    config = get_executor().config
+    executor = get_executor()
+    config = executor.config
     local_ips = _get_local_ip_addresses()
+    runtime_config = _sanitize_value("runtime_config", _build_runtime_config(args, executor))
+
+    logger.info(f"当前监听 Host：{args.host}")
+    logger.info(f"当前数据库连接 Host：{config['host']}")
     logger.info(f"数据库：{config['host']}:{config['port']}/{config['db_name']}")
+    logger.info("当前生效配置（已脱敏）：")
+    logger.info(json.dumps(runtime_config, ensure_ascii=False, indent=2))
     logger.info(f"旧版 SSE 端点：http://{args.host}:{args.port}/sse")
     logger.info(f"新版 MCP 端点：http://{args.host}:{args.port}/mcp")
     logger.info(f"健康检查：http://{args.host}:{args.port}/healthz")

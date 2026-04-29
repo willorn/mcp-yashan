@@ -50,6 +50,9 @@ DB_PORT=1688
 DB_NAME=yashandb
 DB_USER=your_username
 DB_PASSWORD=your_password
+
+# 可选：SQL 执行超时时间（秒），默认 60
+# SQL_TIMEOUT=60
 ```
 
 如果你的数据库连接参数较复杂，也可以直接配置完整 JDBC URL：

@@ -65,6 +65,8 @@ class JavaSqlExecutor:
         self.jar_path = PROJECT_ROOT / os.getenv("YASHAN_JDBC_JAR", DEFAULT_JDBC_JAR)
         self.helper_jar_path = Path(os.getenv("YASHAN_HELPER_JAR", str(HELPER_JAR)))
         self.java_cmd = self._find_java()
+        # 可配置的超时时间（秒），默认 60 秒
+        self.sql_timeout = int(os.getenv("SQL_TIMEOUT", "60"))
         self._initialized = True
 
     def _find_java(self) -> str:
@@ -113,6 +115,13 @@ class JavaSqlExecutor:
 
     def execute(self, sql: str, max_rows: int = 1000) -> Dict[str, Any]:
         """执行 SQL"""
+        # 输入验证
+        if not sql or not sql.strip():
+            return {"success": False, "error": "SQL 语句不能为空"}
+        
+        if max_rows < 1 or max_rows > 10000:
+            return {"success": False, "error": f"max_rows 必须在 1-10000 之间，当前值: {max_rows}"}
+        
         if not self.jar_path.exists():
             return {"success": False, "error": f"JDBC 驱动不存在: {self.jar_path}"}
 
@@ -137,7 +146,7 @@ class JavaSqlExecutor:
                 ],
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=self.sql_timeout,
                 cwd=PROJECT_ROOT,
             )
 
@@ -149,6 +158,9 @@ class JavaSqlExecutor:
 
             return self._parse_output(result.stdout, result.stderr)
 
+        except subprocess.TimeoutExpired:
+            logger.warning("SQL 执行超时 (%d 秒): %s", self.sql_timeout, sql[:100])
+            return {"success": False, "error": f"SQL 执行超时（{self.sql_timeout} 秒）"}
         except Exception as e:
             logger.error("SQL 执行错误: %s", e)
             return {"success": False, "error": str(e)}
@@ -164,33 +176,48 @@ class JavaSqlExecutor:
             "error": None,
         }
 
-        for raw_line in output.strip().splitlines():
-            line = raw_line.strip()
-            if line.startswith("SUCCESS:"):
-                result["success"] = line.split(":", 1)[1].lower() == "true"
-            elif line.startswith("ERROR:"):
-                result["error"] = line[6:]
-            elif line.startswith("COL:"):
-                result["columns"].append(line[4:])
-            elif line.startswith("ROW_B64:"):
-                row_data = line[8:].split("|")
-                row_dict = {}
-                for i, col in enumerate(result["columns"]):
-                    if i >= len(row_data):
-                        continue
-                    encoded_value = row_data[i]
-                    if encoded_value == "NULL":
-                        row_dict[col] = None
-                    else:
-                        row_dict[col] = base64.b64decode(encoded_value).decode("utf-8")
-                result["data"].append(row_dict)
-            elif line.startswith("ROW_COUNT:") or line.startswith("UPDATE_COUNT:"):
-                result["row_count"] = int(line.split(":", 1)[1])
-            elif line.startswith("EXEC_TIME:"):
-                result["execution_time"] = float(line.split(":", 1)[1]) / 1000.0
+        try:
+            for raw_line in output.strip().splitlines():
+                line = raw_line.strip()
+                if line.startswith("SUCCESS:"):
+                    result["success"] = line.split(":", 1)[1].lower() == "true"
+                elif line.startswith("ERROR:"):
+                    result["error"] = line[6:]
+                elif line.startswith("COL:"):
+                    result["columns"].append(line[4:])
+                elif line.startswith("ROW_B64:"):
+                    row_data = line[8:].split("|")
+                    row_dict = {}
+                    for i, col in enumerate(result["columns"]):
+                        if i >= len(row_data):
+                            continue
+                        encoded_value = row_data[i]
+                        if encoded_value == "NULL":
+                            row_dict[col] = None
+                        else:
+                            try:
+                                row_dict[col] = base64.b64decode(encoded_value).decode("utf-8")
+                            except Exception as decode_err:
+                                logger.warning("解码失败: %s", decode_err)
+                                row_dict[col] = f"<解码错误: {encoded_value[:20]}...>"
+                    result["data"].append(row_dict)
+                elif line.startswith("ROW_COUNT:") or line.startswith("UPDATE_COUNT:"):
+                    try:
+                        result["row_count"] = int(line.split(":", 1)[1])
+                    except ValueError:
+                        logger.warning("无法解析行数: %s", line)
+                elif line.startswith("EXEC_TIME:"):
+                    try:
+                        result["execution_time"] = float(line.split(":", 1)[1]) / 1000.0
+                    except ValueError:
+                        logger.warning("无法解析执行时间: %s", line)
 
-        if not result["success"] and not result["error"] and stderr.strip():
-            result["error"] = stderr.strip()
+            if not result["success"] and not result["error"] and stderr.strip():
+                result["error"] = stderr.strip()
+
+        except Exception as e:
+            logger.error("解析 Java 输出失败: %s", e)
+            result["error"] = f"解析输出失败: {str(e)}"
 
         return result
 
