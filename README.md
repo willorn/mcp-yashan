@@ -120,11 +120,13 @@ python3 server.py --host 0.0.0.0 --port 20302
   "mcpServers": {
     "yashan": {
       "command": "python3",
-      "args": ["/path/to/mcp-yashan/mcp_server.py"]
+      "args": ["<项目绝对路径>/mcp_server.py"]
     }
   }
 }
 ```
+
+获取项目绝对路径：在项目目录下执行 `pwd`
 
 ### HTTP 模式
 

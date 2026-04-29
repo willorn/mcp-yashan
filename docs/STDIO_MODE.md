@@ -73,15 +73,31 @@ python3 mcp_server.py
     "yashan": {
       "command": "python3",
       "args": ["/path/to/mcp-yashan/mcp_server.py"],
-      "env": {
-        "PYTHONPATH": "/path/to/mcp-yashan"
-      }
+      "autoApprove": [
+        "test_connection",
+        "run_sql",
+        "list_schemas",
+        "list_tables",
+        "describe_table",
+        "search_tables",
+        "get_table_indexes",
+        "get_table_count",
+        "get_database_info",
+        "explain_sql"
+      ]
     }
   }
 }
 ```
 
-**注意**：将 `/path/to/mcp-yashan` 替换为实际路径。
+**获取路径**：
+```bash
+# 在项目目录下执行
+pwd
+# 输出示例：/Users/username/mcp-yashan
+```
+
+将输出的路径替换到配置中的 `/path/to/mcp-yashan`。
 
 ### Claude Desktop 配置
 
@@ -105,10 +121,7 @@ python3 mcp_server.py
   "mcpServers": {
     "yashan": {
       "command": "python3",
-      "args": ["<项目绝对路径>/mcp_server.py"],
-      "env": {
-        "SQL_TIMEOUT": "120"
-      }
+      "args": ["<项目绝对路径>/mcp_server.py"]
     }
   }
 }
@@ -151,20 +164,20 @@ DB_PASSWORD=your_password
 DB_JDBC_URL=jdbc:yasdb://host:port/dbname?param=value
 ```
 
-### 高级配置
+### 高级配置（可选）
 
 ```bash
 # SQL 执行超时（秒），默认 60
-SQL_TIMEOUT=120
+# SQL_TIMEOUT=120
 
 # 日志级别：DEBUG, INFO, WARNING, ERROR
-LOG_LEVEL=WARNING
+# LOG_LEVEL=WARNING
 
 # 自定义 Java 路径（可选）
-YASHAN_JAVA_HOME=/path/to/jre
+# YASHAN_JAVA_HOME=/path/to/jre
 
 # 自定义 JDBC 驱动路径（可选）
-YASHAN_JDBC_JAR=/path/to/yashandb-jdbc.jar
+# YASHAN_JDBC_JAR=/path/to/yashandb-jdbc.jar
 ```
 
 ---
@@ -347,50 +360,37 @@ A: 设置 `LOG_LEVEL=DEBUG`，查看 `logs/yashan_mcp_stdio.log`。
 
 ## 进阶配置
 
-### 自定义启动脚本
+### 多数据库配置
 
-创建 `start_mcp.sh`：
+为不同数据库创建不同的项目目录：
 
 ```bash
-#!/bin/bash
-cd "$(dirname "$0")"
-export SQL_TIMEOUT=120
-export LOG_LEVEL=WARNING
-exec python3 mcp_server.py
+# 生产环境
+mcp-yashan-prod/
+  .env  # 生产数据库配置
+  mcp_server.py
+
+# 开发环境
+mcp-yashan-dev/
+  .env  # 开发数据库配置
+  mcp_server.py
 ```
 
-在 MCP 配置中使用：
+在 MCP 配置中分别配置：
 
 ```json
 {
   "mcpServers": {
-    "yashan": {
-      "command": "/path/to/mcp-yashan/start_mcp.sh"
+    "yashan-prod": {
+      "command": "python3",
+      "args": ["/path/to/mcp-yashan-prod/mcp_server.py"]
+    },
+    "yashan-dev": {
+      "command": "python3",
+      "args": ["/path/to/mcp-yashan-dev/mcp_server.py"]
     }
   }
 }
-```
-
-### 多数据库配置
-
-为不同数据库创建不同的 `.env` 文件：
-
-```bash
-# .env.prod
-DB_HOST=prod-db.example.com
-DB_USER=prod_user
-
-# .env.dev
-DB_HOST=localhost
-DB_USER=dev_user
-```
-
-创建对应的启动脚本：
-
-```bash
-# start_mcp_prod.sh
-export $(cat .env.prod | xargs)
-exec python3 mcp_server.py
 ```
 
 ---
