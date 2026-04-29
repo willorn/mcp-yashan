@@ -5,11 +5,43 @@
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 
+## 使用模式
+
+本项目支持两种使用模式：
+
+### 🌟 STDIO 模式（推荐）
+
+**按需启动，用完即退，资源占用低**
+
+适合：本地开发、AI 工具集成（Kiro、Claude Desktop 等）
+
+```bash
+python3 mcp_server.py
+```
+
+详见 [STDIO 模式文档](./docs/STDIO_MODE.md)
+
+### 🌐 HTTP 模式
+
+**常驻服务，支持远程访问**
+
+适合：远程访问、多用户共享、高频查询
+
+```bash
+python3 server.py --host 0.0.0.0 --port 20302
+```
+
+详见 [HTTP 模式文档](./docs/HTTP_MODE.md)
+
+---
+
 ## 快速入口
 
-- 快速上手请看 [docs/QUICK_START.md](./docs/QUICK_START.md)
-- SQL 参考请看 [docs/YASHAN_SQL_GUIDE.md](./docs/YASHAN_SQL_GUIDE.md)
-- Windows 开机启动请看 [docs/WINDOWS_AUTOSTART.md](./docs/WINDOWS_AUTOSTART.md)
+- **STDIO 模式**（推荐）：[docs/STDIO_MODE.md](./docs/STDIO_MODE.md)
+- **HTTP 模式**：[docs/HTTP_MODE.md](./docs/HTTP_MODE.md)
+- 快速上手：[docs/QUICK_START.md](./docs/QUICK_START.md)
+- SQL 参考：[docs/YASHAN_SQL_GUIDE.md](./docs/YASHAN_SQL_GUIDE.md)
+- Windows 开机启动：[docs/WINDOWS_AUTOSTART.md](./docs/WINDOWS_AUTOSTART.md)
 
 ## 特性
 
@@ -63,34 +95,40 @@ DB_JDBC_URL=jdbc:yasdb://host:port/dbname?param=value
 
 ## 运行
 
-推荐直接运行：
+### STDIO 模式（推荐）
+
+```bash
+python3 mcp_server.py
+```
+
+### HTTP 模式
 
 ```bash
 ./start.sh
-```
-
-或者：
-
-```bash
+# 或
 python3 server.py --host 0.0.0.0 --port 20302
 ```
 
-## 端点
+## 集成到 AI 工具
 
-- MCP 端点：`http://localhost:20302/mcp`
-- SSE 端点：`http://localhost:20302/sse`
-- 健康检查：`http://localhost:20302/healthz`
-- 日志目录：`logs/yashan_mcp_YYYY-MM-DD.log`
+### STDIO 模式（推荐）
 
-服务启动后会打印：
+在 Kiro 或 Claude Desktop 的 MCP 配置中添加：
 
-- 当前机器可访问 IP
-- 局域网可访问的 MCP / SSE 地址
-- 可供另一台机器参考的 MCP 配置示例
+```json
+{
+  "mcpServers": {
+    "yashan": {
+      "command": "python3",
+      "args": ["/path/to/mcp-yashan/mcp_server.py"]
+    }
+  }
+}
+```
 
-## 另一台机器如何接入
+### HTTP 模式
 
-如果客户端支持 `streamable-http`，可参考：
+如果客户端支持 `streamable-http`：
 
 ```json
 {
@@ -102,6 +140,8 @@ python3 server.py --host 0.0.0.0 --port 20302
   }
 }
 ```
+
+详见对应模式的文档。
 
 ## MCP 工具能力
 
