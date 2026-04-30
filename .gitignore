@@ -67,3 +67,12 @@ htmlcov/
 .cursor/
 .kiro/
 .claude/
+
+# Internal documentation (not for GitHub)
+PROJECT_ASSESSMENT.md
+PYPI_PACKAGING_ANALYSIS.md
+PYPI_PACKAGING_COMPLETE.md
+READY_TO_PUBLISH.md
+PUBLISHED_SUCCESS.md
+FINAL_CHECKLIST.md
+NEXT_STEPS.md

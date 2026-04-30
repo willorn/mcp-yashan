@@ -50,7 +50,7 @@ DB_PASSWORD=your_password
 ### 3️⃣ 测试连接
 
 ```bash
-python3 src/mcp_server.py
+python3 -m mcp_yashan.mcp_server
 ```
 
 输入测试请求（复制粘贴后按 `Ctrl+D`）：
@@ -74,7 +74,7 @@ python3 src/mcp_server.py
   "mcpServers": {
     "yashan": {
       "command": "python3",
-      "args": ["/绝对路径/mcp-yashan/src/mcp_server.py"],
+      "args": ["-m", "mcp_yashan.mcp_server"],
       "autoApprove": ["test_connection", "run_sql", "list_schemas", "list_tables"]
     }
   }
@@ -82,6 +82,20 @@ python3 src/mcp_server.py
 ```
 
 **获取绝对路径**：在项目目录执行 `pwd`
+
+或使用开发环境路径：
+
+```json
+{
+  "mcpServers": {
+    "yashan": {
+      "command": "python3",
+      "args": ["/绝对路径/mcp-yashan/mcp_yashan/mcp_server.py"],
+      "autoApprove": ["test_connection", "run_sql", "list_schemas", "list_tables"]
+    }
+  }
+}
+```
 
 ### Claude Desktop 配置
 

@@ -4,7 +4,9 @@
 崖山数据库 MCP Server - STDIO 模式（默认）
 
 用法：
-  python3 mcp_server.py
+  python3 -m mcp_yashan.mcp_server
+  或
+  mcp-yashan
 
 配置：
   通过 .env 文件配置数据库连接
@@ -16,10 +18,7 @@ import os
 import sys
 from pathlib import Path
 
-# 确保可以导入 core 模块
-sys.path.insert(0, str(Path(__file__).parent))
-
-from core import get_executor, TOOLS, handle_tool_call
+from mcp_yashan.core import get_executor, TOOLS, handle_tool_call
 
 # 配置日志（只输出到 stderr，避免污染 stdout）
 log_dir = Path(__file__).parent.parent / "logs"

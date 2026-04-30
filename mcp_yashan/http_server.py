@@ -198,7 +198,7 @@ logging.basicConfig(
 )
 
 # 导入核心逻辑
-from core import get_executor, get_metadata, TOOLS, handle_tool_call
+from mcp_yashan.core import get_executor, get_metadata, TOOLS, handle_tool_call
 
 # ============================================================
 # SSE 协议支持（旧版，保留兼容）

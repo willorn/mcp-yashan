@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Java SQL 执行器 - 跨平台实现
-优先使用仓库内置的 Java Runtime，不依赖用户机器上的系统 Java。
+支持开发环境和打包后的环境。
 """
 
 import base64
@@ -9,28 +9,80 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger("yashan_mcp")
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+# 支持打包后的环境
+try:
+    # Python 3.9+
+    from importlib.resources import files
+    PACKAGE_ROOT = files('mcp_yashan')
+    RUNTIME_DIR = PACKAGE_ROOT / 'runtime'
+    IS_PACKAGED = True
+except Exception:
+    # 开发环境回退
+    PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+    RUNTIME_DIR = PACKAGE_ROOT / 'runtime'
+    IS_PACKAGED = False
+
+# 项目根目录（用于查找 .env）
+if IS_PACKAGED:
+    PROJECT_ROOT = Path.cwd()
+else:
+    PROJECT_ROOT = PACKAGE_ROOT.parent
+
 DEFAULT_JDBC_JAR = "yashandb-jdbc-1.9.3.jar"
 HELPER_CLASS = "io.yashan.mcp.SqlExecutorMain"
-HELPER_JAR = PROJECT_ROOT / "runtime" / "java" / "yashan-mcp-helper.jar"
+
+
+def _get_runtime_path(relative_path: str) -> Path:
+    """获取 runtime 目录下的文件路径（兼容打包和开发环境）"""
+    if IS_PACKAGED:
+        # 打包环境：需要提取到临时目录
+        import tempfile
+        import shutil as sh
+        
+        temp_dir = Path(tempfile.gettempdir()) / "mcp_yashan_runtime"
+        temp_dir.mkdir(exist_ok=True)
+        
+        target_file = temp_dir / relative_path
+        if not target_file.exists():
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            # 从包中复制文件
+            try:
+                source = RUNTIME_DIR / relative_path
+                with source.open('rb') as src:
+                    target_file.write_bytes(src.read())
+            except Exception as e:
+                logger.error(f"无法提取运行时文件 {relative_path}: {e}")
+        
+        return target_file
+    else:
+        # 开发环境：直接返回路径
+        return RUNTIME_DIR / relative_path
 
 
 def _load_env_file() -> None:
-    """从项目根目录加载 .env，避免只有 server.py 才能初始化配置。"""
-    env_file = PROJECT_ROOT / ".env"
-    if not env_file.exists():
-        return
-
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, value = line.split("=", 1)
-            os.environ.setdefault(key.strip(), value.strip())
+    """从项目根目录加载 .env"""
+    # 尝试多个可能的位置
+    env_candidates = [
+        PROJECT_ROOT / ".env",
+        Path.cwd() / ".env",
+        Path.home() / ".mcp_yashan" / ".env",
+    ]
+    
+    for env_file in env_candidates:
+        if env_file.exists():
+            logger.debug(f"加载配置文件: {env_file}")
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), value.strip())
+            break
 
 
 _load_env_file()
@@ -62,28 +114,27 @@ class JavaSqlExecutor:
             "DB_JDBC_URL",
             f"jdbc:yasdb://{self.config['host']}:{self.config['port']}/{self.config['db_name']}?failover=on"
         )
-        self.jar_path = PROJECT_ROOT / "runtime" / os.getenv("YASHAN_JDBC_JAR", DEFAULT_JDBC_JAR)
-        self.helper_jar_path = Path(os.getenv("YASHAN_HELPER_JAR", str(HELPER_JAR)))
+        
+        # 使用新的路径获取方式
+        jdbc_jar_name = os.getenv("YASHAN_JDBC_JAR", DEFAULT_JDBC_JAR)
+        self.jar_path = _get_runtime_path(jdbc_jar_name)
+        self.helper_jar_path = _get_runtime_path("java/yashan-mcp-helper.jar")
+        
         self.java_cmd = self._find_java()
         # 可配置的超时时间（秒），默认 60 秒
         self.sql_timeout = int(os.getenv("SQL_TIMEOUT", "60"))
         self._initialized = True
 
     def _find_java(self) -> str:
-        """优先查找仓库内置 Java，其次回退到环境变量和 PATH。"""
+        """优先查找系统 Java，其次查找环境变量。"""
         candidates = []
 
         bundled_home = os.getenv("YASHAN_JAVA_HOME")
         if bundled_home:
             candidates.append(Path(bundled_home))
 
-        candidates.extend(
-            [
-                PROJECT_ROOT / "runtime" / "jre",
-                PROJECT_ROOT / "runtime" / "java" / "jre",
-            ]
-        )
-
+        # 不再查找 runtime/jre（已移除内置 JRE）
+        
         java_home = os.getenv("JAVA_HOME")
         if java_home:
             candidates.append(Path(java_home))
@@ -98,8 +149,8 @@ class JavaSqlExecutor:
             return java_on_path
 
         raise FileNotFoundError(
-            "未找到可用的 Java 运行时。请确保仓库内存在 runtime/jre，"
-            "或设置 YASHAN_JAVA_HOME / JAVA_HOME。"
+            "未找到可用的 Java 运行时。请安装 Java 8+ (JRE 或 JDK)，"
+            "或设置 JAVA_HOME 环境变量。"
         )
 
     @staticmethod
@@ -147,7 +198,6 @@ class JavaSqlExecutor:
                 capture_output=True,
                 text=True,
                 timeout=self.sql_timeout,
-                cwd=PROJECT_ROOT,
             )
 
             if result.returncode != 0 and not result.stdout:

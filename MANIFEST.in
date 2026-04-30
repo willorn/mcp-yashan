@@ -1,0 +1,9 @@
+include README.md
+include LICENSE
+include config/.env.example
+recursive-include mcp_yashan/runtime *.jar
+recursive-include docs *.md
+exclude .env
+exclude .DS_Store
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]

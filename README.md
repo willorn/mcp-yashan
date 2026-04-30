@@ -1,5 +1,7 @@
 # 崖山数据库 MCP Server
 
+<!-- mcp-name: io.github.willorn/mcp-yashan -->
+
 一个用于连接崖山数据库（YashanDB）的 MCP（Model Context Protocol）Server，让 AI 助手能够自然语言查询崖山数据库。
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
@@ -55,13 +57,19 @@ python3 server.py --host 0.0.0.0 --port 20302
 
 ```
 mcp-yashan/
-├── src/                        # 源代码
+├── mcp_yashan/                 # 源代码（Python 包）
+│   ├── __init__.py
 │   ├── mcp_server.py          # STDIO 模式入口
 │   ├── http_server.py         # HTTP 模式入口
-│   └── core/                  # 核心逻辑
-│       ├── executor.py        # SQL 执行器
-│       ├── metadata.py        # 元数据管理
-│       └── tools.py           # MCP 工具定义
+│   ├── core/                  # 核心逻辑
+│   │   ├── __init__.py
+│   │   ├── executor.py        # SQL 执行器
+│   │   ├── metadata.py        # 元数据管理
+│   │   └── tools.py           # MCP 工具定义
+│   └── runtime/               # 运行时依赖
+│       ├── yashandb-jdbc-1.9.3.jar
+│       └── java/
+│           └── yashan-mcp-helper.jar
 ├── config/                     # 配置文件
 │   └── .env.example           # 配置模板
 ├── scripts/                    # 脚本工具
@@ -71,17 +79,14 @@ mcp-yashan/
 ├── tests/                      # 测试
 │   ├── test_stability.py      # 稳定性测试
 │   └── test_jdbc.py           # JDBC 连接测试
-├── runtime/                    # 运行时依赖
-│   ├── jre/                   # Java 运行时
-│   ├── java/                  # Java helper
-│   └── yashandb-jdbc-1.9.3.jar
 ├── docs/                       # 文档
 │   ├── STDIO_MODE.md          # STDIO 模式文档
 │   ├── HTTP_MODE.md           # HTTP 模式文档
 │   ├── QUICK_START.md         # 快速开始
 │   └── YASHAN_SQL_GUIDE.md    # SQL 语法指南
+├── pyproject.toml              # Python 包配置
+├── MANIFEST.in                 # 打包清单
 ├── README.md                   # 项目说明
-├── requirements.txt            # Python 依赖
 └── LICENSE                     # MIT 许可证
 ```
 
@@ -161,7 +166,7 @@ DB_JDBC_URL=jdbc:yasdb://host:port/dbname?param=value
 ### STDIO 模式（推荐）
 
 ```bash
-python3 src/mcp_server.py
+python3 -m mcp_yashan.mcp_server
 ```
 
 ### HTTP 模式
@@ -169,7 +174,7 @@ python3 src/mcp_server.py
 ```bash
 ./scripts/start.sh
 # 或
-python3 src/http_server.py --host 0.0.0.0 --port 20302
+python3 -m mcp_yashan.http_server --host 0.0.0.0 --port 20302
 ```
 
 **注意**：首次运行前请确保已安装 Java 并配置 `.env` 文件。
@@ -185,7 +190,20 @@ python3 src/http_server.py --host 0.0.0.0 --port 20302
   "mcpServers": {
     "yashan": {
       "command": "python3",
-      "args": ["<项目绝对路径>/src/mcp_server.py"]
+      "args": ["-m", "mcp_yashan.mcp_server"]
+    }
+  }
+}
+```
+
+或者使用绝对路径（开发环境）：
+
+```json
+{
+  "mcpServers": {
+    "yashan": {
+      "command": "python3",
+      "args": ["<项目绝对路径>/mcp_yashan/mcp_server.py"]
     }
   }
 }
@@ -247,3 +265,14 @@ python3 src/http_server.py --host 0.0.0.0 --port 20302
 ## 许可证
 
 MIT License
+
+### 第三方依赖许可证
+
+本项目包含以下第三方依赖：
+
+- **yashandb-jdbc-1.9.3.jar** - Apache License 2.0
+  - 崖山数据库 JDBC 驱动
+  - 许可证：http://www.apache.org/licenses/LICENSE-2.0
+
+- **yashan-mcp-helper.jar** - MIT License
+  - 本项目编译的 Java 辅助类
