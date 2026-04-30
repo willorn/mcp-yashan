@@ -1,99 +1,136 @@
-# Quick Start
+# 5 分钟快速上手
 
-这个文档面向“下载压缩包后马上开始使用”的场景。
+本文档帮助你在 5 分钟内完成本地 STDIO 模式的配置和测试。
 
-## 1. 配置 `.env`
+> 💡 **推荐场景**：本地开发、集成到 Kiro/Claude Desktop 等 AI 工具
 
-复制模板：
+---
+
+## 前置检查
 
 ```bash
-cp .env.example .env
+# 1. 检查 Python 版本（需要 3.10+）
+python3 --version
+
+# 2. 检查 Java 版本（需要 1.8+）
+java -version
 ```
 
-编辑 `.env`：
+**如果 Java 未安装**：
+- macOS: `brew install openjdk@17`
+- Ubuntu: `sudo apt install openjdk-17-jre`
+- CentOS: `sudo yum install java-17-openjdk`
+
+---
+
+## 三步启动
+
+### 1️⃣ 安装依赖
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2️⃣ 配置数据库
+
+```bash
+cp config/.env.example .env
+```
+
+编辑 `.env`，填写数据库连接信息：
 
 ```env
-DB_HOST=your_database_host
+DB_HOST=localhost
 DB_PORT=1688
 DB_NAME=yashandb
 DB_USER=your_username
 DB_PASSWORD=your_password
 ```
 
-如果你已经有完整 JDBC 连接串，也可以直接配置：
-
-```env
-DB_JDBC_URL=jdbc:yasdb://host:port/dbname?param=value
-```
-
-## 2. 安装 Python 依赖
+### 3️⃣ 测试连接
 
 ```bash
-python3 -m pip install -r requirements.txt
+python3 src/mcp_server.py
 ```
 
-说明：
+输入测试请求（复制粘贴后按 `Ctrl+D`）：
 
-- 普通使用场景下不需要额外安装 Java
-- 服务会优先使用项目内置的 `runtime/jre/bin/java`
-
-## 3. 启动服务
-
-推荐：
-
-```bash
-./start.sh
+```json
+{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}
 ```
 
-或者：
+看到返回 10 个工具列表即成功 ✅
 
-```bash
-python3 server.py --host 0.0.0.0 --port 20302
-```
+---
 
-## 4. 启动成功后会看到什么
+## 集成到 AI 工具
 
-终端会打印：
+### Kiro 配置
 
-- MCP 地址
-- SSE 地址
-- 健康检查地址
-- 局域网 IP
-- 另一台机器可参考的 MCP 配置 JSON
-
-日志会写到：
-
-```text
-logs/yashan_mcp_YYYY-MM-DD.log
-```
-
-## 5. 另一台机器如何配置 MCP
-
-如果另一台机器的 MCP 客户端支持 `streamable-http`，可参考：
+编辑 `.kiro/settings/mcp.json`：
 
 ```json
 {
   "mcpServers": {
     "yashan": {
-      "type": "streamable-http",
-      "url": "http://你的服务IP:20302/mcp"
+      "command": "python3",
+      "args": ["/绝对路径/mcp-yashan/src/mcp_server.py"],
+      "autoApprove": ["test_connection", "run_sql", "list_schemas", "list_tables"]
     }
   }
 }
 ```
 
-也可以先访问健康检查确认服务可达：
+**获取绝对路径**：在项目目录执行 `pwd`
 
-```text
-http://你的服务IP:20302/healthz
+### Claude Desktop 配置
+
+编辑 `~/Library/Application Support/Claude/claude_desktop_config.json`：
+
+```json
+{
+  "mcpServers": {
+    "yashan": {
+      "command": "python3",
+      "args": ["/绝对路径/mcp-yashan/src/mcp_server.py"]
+    }
+  }
+}
 ```
 
-## 6. 如果你要打包给别人
+---
 
-可以执行：
+## 快速测试
 
-```bash
-./scripts/package_release.sh
+配置完成后，在 AI 工具中尝试：
+
+```
+测试崖山数据库连接
 ```
 
-打包产物会放到 `release/` 目录。
+或
+
+```
+列出所有数据库表
+```
+
+---
+
+## 下一步
+
+- 📖 详细配置：[STDIO 模式文档](./STDIO_MODE.md)
+- 🌐 远程访问：[HTTP 模式文档](./HTTP_MODE.md)
+- 📚 SQL 语法：[崖山 SQL 指南](./YASHAN_SQL_GUIDE.md)
+
+---
+
+## 常见问题
+
+**Q: 找不到 Java？**  
+A: 确保 `java -version` 能正常输出，或设置 `JAVA_HOME` 环境变量
+
+**Q: 数据库连接失败？**  
+A: 检查 `.env` 配置是否正确，数据库是否启动
+
+**Q: 找不到模块？**  
+A: 确保在项目根目录运行，且已执行 `pip install -r requirements.txt`

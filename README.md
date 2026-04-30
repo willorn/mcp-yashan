@@ -5,6 +5,14 @@
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 
+---
+
+## 🚀 第一步：快速上手
+
+**推荐新用户先阅读**：[5 分钟快速上手指南](./docs/QUICK_START.md)
+
+---
+
 ## 使用模式
 
 本项目支持两种使用模式：
