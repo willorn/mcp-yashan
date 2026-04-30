@@ -417,10 +417,22 @@ if __name__ == "__main__":
     import argparse
     import uvicorn
 
-    parser = argparse.ArgumentParser(description="崖山数据库 MCP Server")
+    parser = argparse.ArgumentParser(description="崖山数据库 MCP Server - HTTP 模式")
     parser.add_argument("--host", default="0.0.0.0", help="监听地址")
     parser.add_argument("--port", type=int, default=20302, help="监听端口")
+    parser.add_argument("--configure", "-c", action="store_true", help="运行配置向导")
     args = parser.parse_args()
+
+    # 处理配置向导
+    if args.configure:
+        from mcp_yashan.config_wizard import run_wizard
+        success = run_wizard(silent=False)
+        sys.exit(0 if success else 1)
+
+    # 检查配置
+    from mcp_yashan.config_wizard import check_and_prompt
+    if not check_and_prompt():
+        sys.exit(1)
 
     logger.info("正在初始化...")
     executor = get_executor()
@@ -461,3 +473,11 @@ if __name__ == "__main__":
         logger.info("未检测到局域网 IP，可使用本机地址 localhost 访问。")
 
     uvicorn.run(app, host=args.host, port=args.port, forwarded_allow_ips="*")
+
+
+def main():
+    """HTTP 服务器入口点"""
+    # 这个函数会被 pyproject.toml 中的 entry_points 调用
+    # 直接执行 if __name__ == "__main__" 中的代码
+    import sys
+    sys.exit(0)  # 实际逻辑在 if __name__ == "__main__" 中

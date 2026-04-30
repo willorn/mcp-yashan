@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-04-30
+
+### Fixed
+- **关键 Bug 修复**：修复 `core/__init__.py` 中的导入错误
+  - 将 `get_metadata_manager` 改为正确的 `get_metadata`
+  - 修复了 `ImportError: cannot import name 'get_metadata_manager'` 错误
+  - 现在可以正常执行 `python -m mcp_yashan` 和 `uvx mcp-yashan`
+
 ## [2.1.0] - 2026-04-30
 
 ### Added
@@ -60,5 +68,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 详细的错误处理和日志记录
 - Oracle 兼容语法支持
 
+[2.1.1]: https://github.com/willorn/mcp-yashan/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/willorn/mcp-yashan/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/willorn/mcp-yashan/releases/tag/v2.0.0

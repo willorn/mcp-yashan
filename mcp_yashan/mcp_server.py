@@ -138,6 +138,13 @@ def handle_request(request):
 
 def main():
     """主循环：从 stdin 读取请求，向 stdout 输出响应"""
+    # 检查配置（在启动时）
+    import sys
+    if sys.stdin.isatty():  # 只在交互式终端检查
+        from mcp_yashan.config_wizard import check_and_prompt
+        if not check_and_prompt():
+            sys.exit(1)
+    
     logger.info("崖山数据库 MCP Server (STDIO) 启动")
     logger.info(f"日志文件: {log_dir / 'yashan_mcp_stdio.log'}")
     
@@ -147,6 +154,10 @@ def main():
         logger.info(f"数据库配置: {executor.config['host']}:{executor.config['port']}")
     except Exception as e:
         logger.error(f"初始化失败: {e}")
+        # 如果是交互式终端，提示用户
+        if sys.stdin.isatty():
+            print(f"\n❌ 初始化失败: {e}", file=sys.stderr)
+            print("\n请检查配置或运行: mcp-yashan --configure", file=sys.stderr)
         sys.exit(1)
     
     # 主循环
@@ -180,4 +191,29 @@ def main():
 
 
 if __name__ == "__main__":
+    # 处理命令行参数
+    if len(sys.argv) > 1:
+        if sys.argv[1] in ["--configure", "-c", "configure"]:
+            from mcp_yashan.config_wizard import run_wizard
+            success = run_wizard(silent=False)
+            sys.exit(0 if success else 1)
+        elif sys.argv[1] in ["--help", "-h", "help"]:
+            print("""
+崖山数据库 MCP Server - STDIO 模式
+
+用法:
+  mcp-yashan                启动 STDIO 模式服务器
+  mcp-yashan --configure    运行配置向导
+  mcp-yashan --help         显示帮助信息
+
+配置:
+  通过 .env 文件或环境变量配置数据库连接
+  详见: https://github.com/willorn/mcp-yashan
+""")
+            sys.exit(0)
+        else:
+            print(f"未知参数: {sys.argv[1]}", file=sys.stderr)
+            print("使用 --help 查看帮助", file=sys.stderr)
+            sys.exit(1)
+    
     main()

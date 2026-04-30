@@ -8,13 +8,13 @@ Core modules for YashanDB MCP Server
 """
 
 from .executor import get_executor, JavaSqlExecutor
-from .metadata import get_metadata_manager, MetadataManager
+from .metadata import get_metadata, MetadataManager
 from .tools import TOOLS, handle_tool_call
 
 __all__ = [
     "get_executor",
     "JavaSqlExecutor",
-    "get_metadata_manager",
+    "get_metadata",
     "MetadataManager",
     "TOOLS",
     "handle_tool_call",
