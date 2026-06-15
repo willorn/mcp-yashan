@@ -1,3 +1,5 @@
+开发的临时文件可以放到 docs-in-dev 文件夹中，不要提交到 github
+
 # Basic Rules
 
 1. Think in English and answer in Chinese unless the context requires otherwise.

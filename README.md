@@ -9,9 +9,43 @@
 
 ---
 
-## 🚀 第一步：快速上手
+## 🚀 快速开始
 
-**推荐新用户先阅读**：[5 分钟快速上手指南](./docs/QUICK_START.md)
+**新用户推荐**：[5 分钟快速上手指南](./docs/QUICK_START.md)
+
+### 一键健康检查
+
+```bash
+python3 scripts/health_check.py
+```
+
+自动检查 Java 环境、依赖、配置和数据库连接。
+
+### 交互式配置
+
+```bash
+mcp-yashan --configure
+```
+
+或者
+
+```bash
+python3 -m mcp_yashan.mcp_server --configure
+```
+
+按照提示输入数据库信息，自动测试连接并保存配置。
+
+---
+
+## 📚 文档导航
+
+| 文档 | 说明 |
+|------|------|
+| [快速开始](./docs/QUICK_START.md) | 5 分钟快速配置和测试 |
+| [使用示例](./docs/EXAMPLES.md) | 常见查询、AI 提示词、最佳实践 |
+| [STDIO 模式](./docs/STDIO_MODE.md) | 推荐的本地使用方式（详细配置） |
+| [HTTP 模式](./docs/HTTP_MODE.md) | 远程访问、多用户共享 |
+| [SQL 语法指南](./docs/YASHAN_SQL_GUIDE.md) | 崖山数据库 SQL 参考 |
 
 ---
 

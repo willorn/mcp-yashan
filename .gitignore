@@ -26,6 +26,8 @@ venv/
 ENV/
 env/
 .venv/
+test_venv*/
+*_venv/
 
 # IDE
 .idea/

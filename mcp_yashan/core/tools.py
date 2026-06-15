@@ -129,10 +129,44 @@ def handle_test_connection() -> Dict:
             }]
         }
     else:
+        error_msg = res.get('error', '未知错误')
+
+        # 提供详细的故障排查建议
+        troubleshooting = []
+        if "connection" in error_msg.lower() or "refused" in error_msg.lower():
+            troubleshooting.extend([
+                "",
+                "🔍 故障排查步骤：",
+                "  1. 确认数据库服务是否启动",
+                "  2. 检查主机地址和端口是否正确",
+                "  3. 测试网络连接: telnet {host} {port}",
+                "  4. 检查防火墙设置"
+            ])
+        elif "username" in error_msg.lower() or "password" in error_msg.lower():
+            troubleshooting.extend([
+                "",
+                "🔍 认证失败，请检查：",
+                "  1. 用户名和密码是否正确",
+                "  2. 运行配置向导: mcp-yashan --configure",
+                "  3. 确认用户在数据库中存在"
+            ])
+        elif "timeout" in error_msg.lower():
+            troubleshooting.extend([
+                "",
+                "🔍 连接超时，可能原因：",
+                "  1. 网络不稳定或延迟高",
+                "  2. 数据库负载过高",
+                "  3. 防火墙阻止连接"
+            ])
+
+        error_text = f"❌ 连接失败: {error_msg}"
+        if troubleshooting:
+            error_text += "\n" + "\n".join(troubleshooting)
+
         return {
             "content": [{
                 "type": "text",
-                "text": f"❌ 连接失败: {res.get('error', '未知错误')}"
+                "text": error_text
             }],
             "isError": True
         }
@@ -145,10 +179,31 @@ def handle_run_sql(args: Dict) -> Dict:
     res = get_executor().execute(sql, max_rows)
 
     if not res.get("success"):
+        error_msg = res.get('error', '未知错误')
+
+        # 增强错误提示
+        suggestions = []
+        if "ORA-00942" in error_msg or "table or view does not exist" in error_msg.lower():
+            suggestions.append("💡 提示：表不存在，请使用 list_tables 查看可用的表")
+        elif "ORA-00904" in error_msg or "invalid identifier" in error_msg.lower():
+            suggestions.append("💡 提示：列名不存在，请使用 describe_table 查看表结构")
+        elif "ORA-00933" in error_msg or "SQL command not properly ended" in error_msg.lower():
+            suggestions.append("💡 提示：SQL 语法错误，请检查语句是否完整")
+        elif "ORA-01017" in error_msg or "invalid username/password" in error_msg.lower():
+            suggestions.append("💡 提示：用户名或密码错误，请运行 mcp-yashan --configure 重新配置")
+        elif "timeout" in error_msg.lower():
+            suggestions.append("💡 提示：查询超时，尝试添加 WHERE 条件或减少返回行数")
+        elif "connection" in error_msg.lower():
+            suggestions.append("💡 提示：数据库连接失败，请检查网络和数据库状态")
+
+        error_text = f"❌ SQL 执行失败: {error_msg}"
+        if suggestions:
+            error_text += "\n\n" + "\n".join(suggestions)
+
         return {
             "content": [{
                 "type": "text",
-                "text": f"❌ SQL 执行失败: {res.get('error', '未知错误')}"
+                "text": error_text
             }],
             "isError": True
         }

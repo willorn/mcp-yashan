@@ -79,17 +79,78 @@ SQL_TIMEOUT=60
         return False
 
 
+def test_connection(config: dict) -> tuple[bool, str]:
+    """测试数据库连接"""
+    import subprocess
+    import shutil
+    from pathlib import Path
+
+    java_cmd = shutil.which("java")
+    if not java_cmd:
+        return False, "Java 未安装"
+
+    # 获取 JAR 文件路径
+    try:
+        from importlib.resources import files
+        package_root = files('mcp_yashan')
+        runtime_dir = package_root / 'runtime'
+    except:
+        package_root = Path(__file__).resolve().parent
+        runtime_dir = package_root / 'runtime'
+
+    jdbc_jar = runtime_dir / "yashandb-jdbc-1.9.3.jar"
+    helper_jar = runtime_dir / "java" / "yashan-mcp-helper.jar"
+
+    if not jdbc_jar.exists() or not helper_jar.exists():
+        return False, "JDBC 驱动文件不存在"
+
+    jdbc_url = f"jdbc:yasdb://{config['DB_HOST']}:{config['DB_PORT']}/{config['DB_NAME']}"
+
+    try:
+        classpath_sep = ";" if os.name == "nt" else ":"
+        classpath = f"{jdbc_jar}{classpath_sep}{helper_jar}"
+
+        result = subprocess.run(
+            [
+                java_cmd,
+                "-cp", classpath,
+                "io.yashan.mcp.SqlExecutorMain",
+                "SELECT 1 FROM DUAL",
+                "1",
+                jdbc_url,
+                config["DB_USER"],
+                config["DB_PASSWORD"]
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+
+        if "SUCCESS:true" in result.stdout:
+            return True, "连接成功"
+        else:
+            error_msg = "连接失败"
+            if "ERROR:" in result.stdout:
+                error_msg = result.stdout.split("ERROR:", 1)[1].split("\n")[0].strip()
+            return False, error_msg
+
+    except subprocess.TimeoutExpired:
+        return False, "连接超时（10秒）"
+    except Exception as e:
+        return False, f"测试出错: {str(e)}"
+
+
 def run_wizard(silent: bool = False) -> bool:
     """运行配置向导"""
     if silent:
         return False
-    
+
     print("\n" + "=" * 60)
     print("🔧 mcp-yashan 配置向导")
     print("=" * 60)
-    
+
     # 1. 检查 Java
-    print("\n[1/3] 检查 Java 环境...")
+    print("\n[1/4] 检查 Java 环境...")
     if check_java():
         print("✅ Java 已安装")
     else:
@@ -103,21 +164,30 @@ def run_wizard(silent: bool = False) -> bool:
         return False
     
     # 2. 检查配置
-    print("\n[2/3] 检查数据库配置...")
+    print("\n[2/4] 检查数据库配置...")
     has_config, existing_config = check_config()
-    
+
     if has_config:
         print("✅ 配置已存在")
         print(f"   主机: {existing_config['DB_HOST']}")
         print(f"   端口: {existing_config['DB_PORT']}")
         print(f"   数据库: {existing_config['DB_NAME']}")
         print(f"   用户: {existing_config['DB_USER']}")
-        return True
-    
-    print("⚠️  配置不完整，需要设置数据库连接信息")
-    
+
+        # 询问是否重新配置
+        print("\n是否重新配置? (y/n) ", end="", flush=True)
+        try:
+            answer = input().strip().lower()
+            if answer not in ["y", "yes", "是"]:
+                return True
+        except (KeyboardInterrupt, EOFError):
+            print("\n")
+            return True
+    else:
+        print("⚠️  配置不完整，需要设置数据库连接信息")
+
     # 3. 交互式配置
-    print("\n[3/3] 配置数据库连接")
+    print("\n[3/4] 配置数据库连接")
     print("-" * 60)
     
     try:
@@ -153,30 +223,56 @@ def run_wizard(silent: bool = False) -> bool:
             return False
         config["DB_PASSWORD"] = password
         
-        # 4. 选择保存位置
+        # 4. 测试连接
+        print("\n[4/4] 测试数据库连接...")
+        print("正在连接数据库，请稍候...")
+
+        success, message = test_connection(config)
+
+        if success:
+            print(f"✅ {message}")
+        else:
+            print(f"❌ {message}")
+            print("\n配置可能有误，是否仍要保存? (y/n) ", end="", flush=True)
+            try:
+                answer = input().strip().lower()
+                if answer not in ["y", "yes", "是"]:
+                    print("❌ 已取消配置")
+                    return False
+            except (KeyboardInterrupt, EOFError):
+                print("\n❌ 已取消配置")
+                return False
+
+        # 5. 选择保存位置
         print("\n配置文件保存位置：")
         print("  1. 当前目录 (.env)")
         print("  2. 用户主目录 (~/.mcp_yashan/.env) [推荐]")
-        
+
         choice = input("\n请选择 [2]: ").strip()
-        
+
         if choice == "1":
             config_path = Path.cwd() / ".env"
         else:
             config_path = Path.home() / ".mcp_yashan" / ".env"
-        
-        # 5. 保存配置
+
+        # 6. 保存配置
         print(f"\n保存配置到: {config_path}")
         if create_config_file(config, config_path):
             print("✅ 配置保存成功！")
             print("\n" + "=" * 60)
             print("🎉 配置完成！现在可以使用 mcp-yashan 了")
             print("=" * 60)
-            
+
+            # 显示下一步提示
+            print("\n下一步：")
+            print("  1. 在 AI 工具中配置 MCP 服务器")
+            print("  2. 查看文档: https://github.com/willorn/mcp-yashan")
+            print("  3. 快速测试: python3 -m mcp_yashan.mcp_server")
+
             # 设置环境变量（当前会话）
             for key, value in config.items():
                 os.environ[key] = value
-            
+
             return True
         else:
             return False
